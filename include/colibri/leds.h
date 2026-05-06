@@ -4,6 +4,8 @@
 int led_init();
 int rgb_init();
 
+void rgb_update();
+
 void led_set(int state);   // 0=off, 1=green, 2=red, 3=both
 void led_set_off();
 void led_set_green();

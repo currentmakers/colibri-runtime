@@ -20,6 +20,9 @@ target_sources(app PRIVATE
         src/modbus/modbus.c
         src/slots/slots.c
         src/slots/slotcount.c
+        src/tasks/io-subsystem.c
+        src/tasks/rgb-updater.c
+        src/tasks/supervisor.c
         src/user/user.c
         src/wasm/engines.c
         src/wasm/rgb.c

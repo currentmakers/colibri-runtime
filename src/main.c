@@ -12,7 +12,7 @@
 #include "colibri/fs.h"
 #include "colibri/leds.h"
 #include "colibri/modbus.h"
-#include "colibri/slots.h"
+#include "colibri/tasks.h"
 #include "colibri/wasm.h"
 
 #define BLINK_INTERVAL_MS 300
@@ -59,34 +59,36 @@ int main(void)
     {
         printk("Unable to write to start log.\n");
     }
+    supervisor_initialize();
+    io_initialize(slot_count());
 
-    printk("Entering blink loop.\n");
-    int current_slot = 0;   // 0 = MCU slot.
-    int total_slots = slot_count() + 1;
-    // int total_slots = 2;
-    uint64_t next = 0;
-    uint64_t next_print = 0;
-    int loop_count = 0;
-    while (1)
-    {
-        int64_t now = k_uptime_get();
-        if ( next < now )
-        {
-            int64_t t0 = k_uptime_get();
-            wasm_tick(now, current_slot);
-            int64_t t1 = k_uptime_get();
-            printk("wasm_tick took %d ms\n", (int)(t1 - t0));
-            current_slot = (current_slot + 1) % total_slots;
-            next = now + 1000;
-        }
-        if ( next_print < now)
-        {
-            printk("Loop count: %d\n", loop_count);
-            loop_count = 0;
-            next_print = now + 5000;
-        }
-        loop_count++;
-        k_msleep(10);
-    }
+    // printk("Entering blink loop.\n");
+    // int current_slot = 0;   // 0 = MCU slot.
+    // int total_slots = slot_count() + 1;
+    // // int total_slots = 2;
+    // uint64_t next = 0;
+    // uint64_t next_print = 0;
+    // int loop_count = 0;
+    // while (1)
+    // {
+    //     int64_t now = k_uptime_get();
+    //     if ( next < now )
+    //     {
+    //         int64_t t0 = k_uptime_get();
+    //         wasm_io_tick(now, current_slot);
+    //         int64_t t1 = k_uptime_get();
+    //         printk("wasm_tick took %d ms\n", (int)(t1 - t0));
+    //         current_slot = (current_slot + 1) % total_slots;
+    //         next = now + 50;
+    //     }
+    //     if ( next_print < now)
+    //     {
+    //         printk("Loop count: %d\n", loop_count);
+    //         loop_count = 0;
+    //         next_print = now + 5000;
+    //     }
+    //     loop_count++;
+    //     k_msleep(2);
+    // }
     return 0;
 }

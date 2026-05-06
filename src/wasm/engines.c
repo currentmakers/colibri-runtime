@@ -14,6 +14,7 @@
 #include "mock/rgb_blink.h"
 
 static wasm_engine io_engines[8];
+static wasm_engine user_engines[1] = {0};
 static IM3Environment env;
 
 static const unsigned int code_size[] = {
@@ -94,20 +95,20 @@ void wasm_initialize(int slots)
     }
 }
 
-void wasm_tick(uint64_t now, int slot)
+void wasm_user_tick(uint64_t now)
 {
-    slot_select(slot);
-    if (slot == 0)
+    uint32_t event = create_user_event(COLIBRI_EVENT_TYPE_TIME, now);
+    wasm_engine user_engine = user_engines[0];
+    if ( user_engine.runtime != NULL)
     {
-        // blink for slot 0 as well
-        uint32_t event = create_io_event(slot, COLIBRI_EVENT_TYPE_TIME, now);
-        M3Result result = m3_CallV(io_engines[slot].fn_event, event, now);
+        M3Result result = m3_CallV(user_engine.fn_event, event, now);
         if (result) printk("event(%d, %lld): %s\n", event, now, result);
     }
-    else
-    {
-        uint32_t event = create_io_event(slot, COLIBRI_EVENT_TYPE_TIME, 0);
-        M3Result result = m3_CallV(io_engines[slot].fn_event, event, now);
-        if (result) printk("event(%d, %lld): %s\n", event, now, result);
-    }
+}
+
+void wasm_io_tick(uint64_t now, int slot)
+{
+    uint32_t event = create_io_event(slot, COLIBRI_EVENT_TYPE_TIME, 0);
+    M3Result result = m3_CallV(io_engines[slot].fn_event, event, now);
+    if (result) printk("event(%d, %lld) -> %d: %s\n", event, now, slot, result);
 }

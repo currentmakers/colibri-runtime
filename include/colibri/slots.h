@@ -14,12 +14,4 @@ int slot_count();
 void slot_select(int slot);
 int slot_selected();
 
-// User API
-long get(int id);
-void publish(int id, long value);
-void subscribe(int id);
-void unsubscribe(int id);
-
-// IO API
-
 #endif

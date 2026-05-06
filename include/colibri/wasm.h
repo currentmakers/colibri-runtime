@@ -18,5 +18,7 @@ typedef struct
 
 void wasm_rgb_api_init(IM3Module module);
 void wasm_initialize(int slots);
-void wasm_tick(uint64_t now, int slot);
+void wasm_io_tick(uint64_t now, int slot);
+void wasm_user_tick(uint64_t now);
+
 #endif
