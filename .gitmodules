@@ -1,0 +1,4 @@
+[submodule "wasm3"]
+	path = wasm3
+	url = git@github.com:currentmakers/wasm3.git
+	branch = main
