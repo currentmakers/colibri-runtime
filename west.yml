@@ -1,0 +1,33 @@
+# @copyright Copyright (c) 2026, CurrentMakers.com and the individuals that has contributed to this project.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+manifest:
+  projects:
+    - name: zephyr
+      revision: v4.4.0
+      url: https://github.com/zephyrproject-rtos/zephyr
+      west-commands: scripts/west-commands.yml
+      import:
+        name-allowlist:
+          - littlefs
+          - picolibc
+          - hal_stm32
+          - hal_st
+          - hal_nordic
+          - hal_rpi_pico
+          - cmsis_6
+    - name: zephyr-cm
+      url: https://github.com/currentmakers/zephyr-cm
+      revision: master 
+      path: zephyr-cm
+    - name: zephyr-ws2812b-pwm
+      url: https://github.com/currentmakers/zephyr-ws2812b-pwm
+      revision: master
+      path: modules/lib/zephyr-ws2812b-pwm
+#    - name: wasm-micro-runtime
+#      url: https://github.com/bytecodealliance/wasm-micro-runtime.git
+#      revision: main
+#      path: modules/lib/wasm-micro-runtime
+  self:
+    path: .
