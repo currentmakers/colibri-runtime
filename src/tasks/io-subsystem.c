@@ -3,7 +3,7 @@
 #include "colibri/tasks.h"
 #include "colibri/wasm.h"
 
-#define IO_STACK_SIZE 1024
+#define IO_STACK_SIZE 4096
 #define IO_PRIORITY 5
 
 K_THREAD_STACK_DEFINE(io_work_queue_stack, IO_STACK_SIZE);
@@ -36,7 +36,7 @@ static void io_tick(struct k_work *work)
 
 void io_initialize(int number_of_slots)
 {
-    n_slots = number_of_slots;
+    n_slots = number_of_slots + 1;      // 7 means seven I/O slots, and we have 8 physical slots to deal with.
     k_work_queue_start(&io_queue, io_work_queue_stack,
                        K_THREAD_STACK_SIZEOF(io_work_queue_stack),
                        IO_PRIORITY, NULL);

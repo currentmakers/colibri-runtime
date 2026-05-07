@@ -9,11 +9,22 @@
 static const struct device* const strip = DEVICE_DT_GET(LED_STRIP_NODE);
 static struct led_rgb pixels[LED_STRIP_COUNT];
 
-static bool changed;
+static volatile bool initialized;
+static volatile bool changed;
 
 void rgb_update()
 {
-    if ( changed )
+    if (!initialized)
+    {
+        if (!device_is_ready(strip))
+        {
+            printk("led_strip device is not ready\n");
+            return;
+        }
+        printk("Shield led_strip node: %s (chain_length=%d)\n", LED_STRIP_LABEL, LED_STRIP_COUNT);
+        initialized = true;
+    }
+    if (changed)
         led_strip_update_rgb(strip, pixels, LED_STRIP_COUNT);
     changed = false;
 }
@@ -22,7 +33,7 @@ void rgb_set_color(int slot, int rgb)
 {
     pixels[slot].r = rgb >> 16 & 0xFF;
     pixels[slot].g = rgb >> 8 & 0xFF;
-    pixels[slot].b = rgb& 0xFF;
+    pixels[slot].b = rgb & 0xFF;
     changed = true;
 }
 
@@ -36,32 +47,20 @@ void rgb_set_rgb(int slot, int r, int g, int b)
 
 void rgb_set_off(int slot)
 {
-    rgb_set_rgb(slot, 0,0,0);
+    rgb_set_rgb(slot, 0, 0, 0);
 }
 
 void rgb_set_red(int slot)
 {
-    rgb_set_rgb(slot, 0xff,0,0);
+    rgb_set_rgb(slot, 0xff, 0, 0);
 }
 
 void rgb_set_green(int slot)
 {
-    rgb_set_rgb(slot, 0,0xff,0);
+    rgb_set_rgb(slot, 0, 0xff, 0);
 }
 
 void rgb_set_blue(int slot)
 {
-    rgb_set_rgb(slot, 0,0,0xff);
+    rgb_set_rgb(slot, 0, 0, 0xff);
 }
-
-int rgb_init()
-{
-    if (!device_is_ready(strip))
-    {
-        printk("led_strip device is not ready\n");
-        return -1;
-    }
-    printk("Shield led_strip node: %s (chain_length=%d)\n", LED_STRIP_LABEL, LED_STRIP_COUNT);
-    return 0;
-}
-

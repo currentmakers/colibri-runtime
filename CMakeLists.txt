@@ -48,7 +48,7 @@ target_sources(app PRIVATE
 target_compile_definitions(app PRIVATE
         # Platform & Optimization
         ARM
-        M4_COMPILER_GCC
+        M3_COMPILER_GCC
         d_m3HasFloat=1              # Keep if your hardware logic needs decimals
 
         # Aggressive RAM Shrinking

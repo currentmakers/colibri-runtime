@@ -1,7 +1,7 @@
 
 #include <zephyr/kernel.h>
 
-#define SUPERVISOR_STACK_SIZE 1024
+#define SUPERVISOR_STACK_SIZE 4096
 #define SUPERVISOR_PRIORITY 5
 
 K_THREAD_STACK_DEFINE(supervisor_work_queue_stack, SUPERVISOR_STACK_SIZE);
