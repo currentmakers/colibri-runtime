@@ -18,7 +18,7 @@ static wasm_engine user_engines[1] = {0};
 static IM3Environment env;
 
 static const unsigned int code_size[] = {
-    io_rgb_blink_len,
+    io_empty_len,
     io_aiv_len,
     io_aic_len,
     io_aqv_len,
@@ -29,7 +29,7 @@ static const unsigned int code_size[] = {
 };
 
 static const uint8_t *code[] = {
-    io_rgb_blink,
+    io_empty,
     io_aiv,
     io_aic,
     io_aqv,

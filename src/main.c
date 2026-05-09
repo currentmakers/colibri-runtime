@@ -13,7 +13,6 @@
 #include "colibri/leds.h"
 #include "colibri/modbus.h"
 #include "colibri/tasks.h"
-#include "colibri/wasm.h"
 
 #define BLINK_INTERVAL_MS 300
 
@@ -24,9 +23,8 @@ int main(void)
     code |= nvs_init();
     code |= littlefs_init();
     code |= modbus_init();
-    code |= slots_init();
-    wasm_initialize(slot_count());
-    // wasm_initialize(1);
+    code |= slots_initialize();
+    // wasm_initialize(slot_count());
     printk("Colibri Runtime booting on board '%s'\n", CONFIG_BOARD);
     k_msleep(1000);
     if (code != 0)

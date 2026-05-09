@@ -26,17 +26,13 @@ long get(int id);
 void publish(int id, long value);
 void subscribe(int id);
 void unsubscribe(int id);
-void set_rgb_ok();
-void set_rgb_warning();
-void set_rgb_error();
-void set_rgb_off();
 
-int get_rgb_ok_color();
-int get_rgb_warning_color();
-int get_rgb_error_color();
-
-void set_rgb_ok_color(int rgb);
-void set_rgb_warning_color(int rgb);
-void set_rgb_error_color(int rgb);
+// RGB color if rgb value >=0
+// if RGB <0
+//  -1 == Ok color  (normally green)
+//  -2 == Warning color (normally yellow)
+//  -3 == Error color (normally red)
+//  -4 == Info color (normally blue)
+void set_rgb_color(uint32_t color);
 
 #endif

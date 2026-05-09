@@ -4,46 +4,39 @@
 #include "wasm3.h"
 #include "m3_env.h"
 
-static int ok_color;
-static int error_color;
-static int warning_color;
+static int ok_color = 0x000400;
+static int error_color = 0x080000;
+static int warning_color = 0x040400;
+static int info_color = 0x010108;
 
-static m3ApiRawFunction(set_rgb_ok_color)
+static m3ApiRawFunction(set_rgb_color)
 {
     m3ApiGetArg(int, rgb)
-    ok_color = rgb;
-    return 0;
-}
-
-static m3ApiRawFunction(set_rgb_warning_color)
-{
-    m3ApiGetArg(int, rgb)
-    warning_color = rgb;
-    return 0;
-}
-
-static m3ApiRawFunction(set_rgb_error_color)
-{
-    m3ApiGetArg(int, rgb)
-    error_color = rgb;
-    return 0;
-}
-
-static m3ApiRawFunction(set_rgb_ok)
-{
-    rgb_set_color(slot_selected(), ok_color);
-    return 0;
-}
-
-static m3ApiRawFunction(set_rgb_warning)
-{
-    rgb_set_color(slot_selected(), warning_color);
-    return 0;
-}
-
-static m3ApiRawFunction(set_rgb_error)
-{
-    rgb_set_color(slot_selected(), error_color);
+    int slot = slot_selected();
+    if (rgb >= 0)
+    {
+        rgb_set_color(slot, 0);
+    }
+    else
+    {
+        switch (rgb)
+        {
+        case -1: // Ok
+            rgb_set_color(slot, ok_color);
+            break;
+        case -2: // Warning
+            rgb_set_color(slot, warning_color);
+            break;
+        case -3: // Error
+            rgb_set_color(slot, error_color);
+            break;
+        case -4: // Info
+            rgb_set_color(slot, info_color);
+            break;
+        default:
+            break;
+        }
+    }
     return 0;
 }
 
@@ -55,12 +48,6 @@ static m3ApiRawFunction(set_rgb_off)
 
 void wasm_rgb_api_init(IM3Module module)
 {
-    m3_LinkRawFunction(module, "*", "set_rgb_ok", "v()", set_rgb_ok);
-    m3_LinkRawFunction(module, "*", "set_rgb_warning", "v()", set_rgb_warning);
-    m3_LinkRawFunction(module, "*", "set_rgb_error", "v()", set_rgb_error);
+    m3_LinkRawFunction(module, "*", "set_rgb_color", "v(i)", set_rgb_color);
     m3_LinkRawFunction(module, "*", "set_rgb_off", "v()", set_rgb_off);
-    m3_LinkRawFunction(module, "*", "set_rgb_ok_color", "v(i)", set_rgb_ok_color);
-    m3_LinkRawFunction(module, "*", "set_rgb_warning_color", "v(i)", set_rgb_warning_color);
-    m3_LinkRawFunction(module, "*", "set_rgb_error_color", "v(i)", set_rgb_error_color);
 }
-

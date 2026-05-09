@@ -1,9 +1,9 @@
 #include <zephyr/kernel.h>
 #include "colibri/slots.h"
 #include "colibri/tasks.h"
-#include "colibri/wasm.h"
+// #include "colibri/wasm.h"
 
-#define IO_STACK_SIZE 4096
+#define IO_STACK_SIZE 8192
 #define IO_PRIORITY 5
 
 K_THREAD_STACK_DEFINE(io_work_queue_stack, IO_STACK_SIZE);
@@ -15,20 +15,20 @@ static struct k_work_delayable io_work;
 
 static void user_tick(uint64_t now)
 {
-    wasm_user_tick(now);
+    // wasm_user_tick(now);
 }
 
 static void io_tick(struct k_work *work)
 {
     uint64_t now = k_uptime_get();
     slot_select(current_slot);
-    if ( current_slot == 0)
+    if ( current_slot == 10)
     {
         // Special handling for slot 0
         user_tick(now);
     } else
     {
-        wasm_io_tick(now, current_slot);
+        // wasm_io_tick(now, current_slot);
     }
     current_slot = (current_slot + 1) % n_slots;
     k_work_schedule_for_queue(&io_queue, &io_work, K_MSEC(10));
