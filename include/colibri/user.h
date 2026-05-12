@@ -6,18 +6,18 @@
 
 // Mandatory SPI functions. MUST be implemented
 void event(int id, long value);  // A value was published from an id previously subscribed to.
-void init();                     // Called once after power-up, immediately after the wasm has been loaded into
+void init();                     // Called once after power-up, immediately after the code has been loaded into
                                  // RAM, before calling loaded();
                                  // Typically the implementation should subscribe to a timer event, otherwise
                                  // it will only be called on power-up. For instance;
                                  //     subscribe(TIME_100_MS);
-void loaded();                   // Called each time the wasm binary is loaded into RAM. Unloading may happen
+void loaded();                   // Called each time the binary is loaded into RAM. Unloading may happen
                                  // when there are no subscriptions, that happens frequently. For instance,
                                  // if the init() function only calls;
                                  //     subscribe(TIME_1_HOUR);
-                                 // then the wasm binary might be unloaded after its execution and reloaded
+                                 // then the binary might be unloaded after its execution and reloaded
                                  // just before it is time to call the event() function.
-void unloading();                // Called by the framework just before the wasm binary is unloaded from RAM.
+void unloading();                // Called by the framework just before the binary is unloaded from RAM.
 
 // Optional SPI functions. MUST be implemented
 

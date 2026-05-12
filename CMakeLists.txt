@@ -6,66 +6,70 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(colibri_runtime C CXX ASM) # Enable ASM here, within the project call
 
 target_include_directories(app PRIVATE
+        colibri-sdk/
+        lua/
         include/
-        wasm3/source
 )
 
 target_sources(app PRIVATE
-        ${WASM3_SOURCES}
         src/main.c
         src/fs/littlefs.c
         src/fs/nvs.c
         src/leds/neopixels.c
         src/leds/leds.c
+        src/lua/load-lua-test.c
+        src/lua/luaInterface.c
+        src/lua/lua.c
         src/modbus/modbus.c
+        src/slots/host-api.c
         src/slots/slots.c
         src/slots/slotcount.c
         src/tasks/io-subsystem.c
         src/tasks/rgb-updater.c
         src/tasks/supervisor.c
-        src/user/user.c
-        src/wasm/engines.c
-        src/wasm/rgb.c
-        src/wasm/spi.c
-        src/wasm/i2c.c
 
-        wasm3/source/m3_api_libc.c
-        wasm3/source/m3_api_meta_wasi.c
-        wasm3/source/m3_api_tracer.c
-        wasm3/source/m3_api_uvwasi.c
-        wasm3/source/m3_api_wasi.c
-        wasm3/source/m3_bind.c
-        wasm3/source/m3_code.c
-        wasm3/source/m3_compile.c
-        wasm3/source/m3_core.c
-        wasm3/source/m3_env.c
-        wasm3/source/m3_exec.c
-        wasm3/source/m3_function.c
-        wasm3/source/m3_info.c
-        wasm3/source/m3_module.c
-        wasm3/source/m3_parse.c
+        io-drivers/carrier.c
+        io-drivers/io_aic.c
+        io-drivers/io_aiv.c
+        io-drivers/io_aqv.c
+        io-drivers/io_dio1.c
+        io-drivers/io_empty.c
+        io-drivers/io_pid1.c
+        io-drivers/io_ssr.c
+        io-drivers/rgb_blink.c
+
+        lua/lapi.c
+        lua/lbaselib.c
+        lua/lctype.c
+        lua/ldo.c
+        lua/lfunc.c
+        lua/linit.c
+        lua/lmathlib.c
+        lua/lobject.c
+        lua/lparser.c
+        lua/lstring.c
+        lua/ltable.c
+        lua/ltm.c
+        lua/lvm.c
+        lua/lauxlib.c
+        lua/lcode.c
+        lua/ldebug.c
+        lua/ldump.c
+        lua/lgc.c
+        lua/llex.c
+        lua/lmem.c
+        lua/lopcodes.c
+        lua/lstate.c
+        lua/lstrlib.c
+        lua/ltablib.c
+        lua/lundump.c
+        lua/lzio.c
+        lua/helper/luaHeap.c
 )
+
 target_compile_definitions(app PRIVATE
         # Platform & Optimization
         ARM
-        M3_COMPILER_GCC
-        d_m3HasFloat=1              # Keep if your hardware logic needs decimals
-
-        # Aggressive RAM Shrinking
-        d_m3MaxLinearMemoryPages=32  # We will limit the ACTUAL use via the .wasm file
-        d_m3MaxStackSize=128        # 128 bytes is plenty for ~10 stack levels
-        d_m3CodePageSize=256        # Smallest viable page size for the instruction cache
-        d_m3CodePageAlignSize=64
-        d_m3FixedHeap=65536         # This is the size of the wasm3 managed heap
-
-        # Others
-        d_m3MaxFunctionStackHeight=32
-        d_m3CascadedOpcodes=0
-
-        # Feature Stripping
-#        d_m3VerboseErrorMessages=0  # Saves flash and internal string handling
-#        d_m3LogRuntimeRelocations=0
-        d_m3EnableOpcodeStats=0
-
+        M4_COMPILER_GCC
 )
 target_link_libraries(app PUBLIC m)

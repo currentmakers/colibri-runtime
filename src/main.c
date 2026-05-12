@@ -24,7 +24,6 @@ int main(void)
     code |= littlefs_init();
     code |= modbus_init();
     code |= slots_initialize();
-    // wasm_initialize(slot_count());
     printk("Colibri Runtime booting on board '%s'\n", CONFIG_BOARD);
     k_msleep(1000);
     if (code != 0)
@@ -59,34 +58,5 @@ int main(void)
     }
     supervisor_initialize();
     io_initialize(slot_count());
-
-    // printk("Entering blink loop.\n");
-    // int current_slot = 0;   // 0 = MCU slot.
-    // int total_slots = slot_count() + 1;
-    // // int total_slots = 2;
-    // uint64_t next = 0;
-    // uint64_t next_print = 0;
-    // int loop_count = 0;
-    // while (1)
-    // {
-    //     int64_t now = k_uptime_get();
-    //     if ( next < now )
-    //     {
-    //         int64_t t0 = k_uptime_get();
-    //         wasm_io_tick(now, current_slot);
-    //         int64_t t1 = k_uptime_get();
-    //         printk("wasm_tick took %d ms\n", (int)(t1 - t0));
-    //         current_slot = (current_slot + 1) % total_slots;
-    //         next = now + 50;
-    //     }
-    //     if ( next_print < now)
-    //     {
-    //         printk("Loop count: %d\n", loop_count);
-    //         loop_count = 0;
-    //         next_print = now + 5000;
-    //     }
-    //     loop_count++;
-    //     k_msleep(2);
-    // }
     return 0;
 }
