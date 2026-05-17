@@ -16,7 +16,7 @@ static void io_tick(struct k_work *work)
 {
     uint64_t now = k_uptime_get();
     slot_select(current_slot);
-    slots_tick(now, current_slot);
+    slots_tick(current_slot, now);
     current_slot = (current_slot + 1) % n_slots;
     k_work_schedule_for_queue(&io_queue, &io_work, K_MSEC(10));
 }

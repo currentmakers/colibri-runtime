@@ -1,15 +1,14 @@
 #include "colibri/slots.h"
+#include "colibri-sdk/colibri.h"
+#include "colibri-sdk/colibri-io-eeprom.h"
 
 #include <stdlib.h>
 
-#include "mock/colibri-mock.h"
-#include "colibri/eeprom.h"
+// include "mock/colibri-mock.h"
 
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/eeprom.h>
-#include <zephyr/drivers/spi.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 
@@ -42,7 +41,7 @@ static inline void slot_call_driver_event(void* func_ptr, void* r9_target_ram,
 #define EEPROM_DEVICE_GET(n) DEVICE_DT_GET(DT_NODELABEL(eeprom##n)),
 
 // Array of EEPROM device pointers managed by the Zephyr driver
-static const struct device *const eeprom_devices[] = {
+static const struct device* const eeprom_devices[] = {
     EEPROM_DEVICE_GET(0)
     EEPROM_DEVICE_GET(1)
     EEPROM_DEVICE_GET(2)
@@ -67,7 +66,7 @@ static int selected_slot;
 static uint32_t powered = 0;
 static uint32_t not_in_reset = 0;
 
-static eeprom_layout eeprom_buffer;
+static eeprom_layout_t eeprom_buffer;
 static uint8_t text_area[1024]; // 0x0200
 static uint8_t pic_arm[2048]; // 0x1000
 
@@ -95,22 +94,22 @@ static void copy(const uint32_t* pointer, char** str)
 }
 
 
-void setup_mock(slot_info_t* slot, char* model, char* revision, unsigned char* code, unsigned char code_len)
-{
-    if (code_len > 2048)
-    {
-        printk("ERROR: code for %s is too large. Must be below 2048 bytes.", model);
-        return;
-    }
-    slot->vendor = "CurrentMakers";
-    slot->model = model;
-    memset(slot->revision, 0, sizeof(slot->revision));
-    memcpy(slot->revision, revision, strlen(revision));
-    memcpy(slot->code_pic, code, code_len);
-    memset(slot->driver_ram, 0, sizeof(slot->driver_ram));
-    slot->doc_link = "https://stm32world.com/Colibri";
-    slot->product_link = "https://currentmakers.com/products/colibri/";
-}
+// void setup_mock(slot_info_t* slot, char* model, char* revision, unsigned char* code, unsigned char code_len)
+// {
+//     if (code_len > 2048)
+//     {
+//         printk("ERROR: code for %s is too large. Must be below 2048 bytes.", model);
+//         return;
+//     }
+//     slot->vendor = "CurrentMakers";
+//     slot->model = model;
+//     memset(slot->revision, 0, sizeof(slot->revision));
+//     memcpy(slot->revision, revision, strlen(revision));
+//     memcpy(slot->code_pic, code, code_len);
+//     memset(slot->driver_ram, 0, sizeof(slot->driver_ram));
+//     slot->doc_link = "https://stm32world.com/Colibri";
+//     slot->product_link = "https://currentmakers.com/products/colibri/";
+// }
 
 static int power_on()
 {
@@ -149,7 +148,8 @@ static int deactive_reset(void)
     }
     return 0;
 }
-static int read_eeprom(const struct device* eeprom, off_t address_in_eeprom, size_t size, void *output)
+
+static int read_eeprom(const struct device* eeprom, off_t address_in_eeprom, size_t size, void* output)
 {
     return eeprom_read(eeprom, address_in_eeprom, output, size);
 }
@@ -165,7 +165,7 @@ static uint32_t read_eeprom_fingerprint(const struct device* eeprom)
 
 static int read_eeprom_metadata(const struct device* eeprom)
 {
-    return read_eeprom(eeprom, 4, sizeof(eeprom_buffer), (uint8_t *) &eeprom_buffer.serial_number);
+    return read_eeprom(eeprom, 4, sizeof(eeprom_buffer), (uint8_t*)&eeprom_buffer.serial_number);
 }
 
 static int read_eeprom_textarea(const struct device* eeprom)
@@ -176,6 +176,31 @@ static int read_eeprom_textarea(const struct device* eeprom)
 static int read_eeprom_code(const struct device* eeprom)
 {
     return read_eeprom(eeprom, 0x1000, sizeof(pic_arm), pic_arm);
+}
+
+static void driver_init(slot_info_t* slot)
+{
+    // Call the driver's init() life-cycle function.
+    if (slot->vmt && slot->vmt->init)
+    {
+        slot_call_driver_with_r9((void*)slot->vmt->init, slot->driver_ram, 0, 0);
+    }
+}
+
+static void driver_event(slot_info_t* slot, int32_t event_id, uint64_t value)
+{
+    if (slot->vmt && slot->vmt->event)
+    {
+        slot_call_driver_event((void*)slot->vmt->event, slot->driver_ram, event_id, value);
+    }
+}
+
+static void driver_loaded(slot_info_t* slot)
+{
+    if (slot->vmt && slot->vmt->loaded)
+    {
+        slot_call_driver_with_r9((void*)slot->vmt->loaded, slot->driver_ram, 0, 0);
+    }
 }
 
 int slots_initialize()
@@ -189,7 +214,7 @@ int slots_initialize()
     result = deactive_reset();
     if (result) return result;
     k_msleep(100); // Allow for hardware to wake up.
-    bool found = false;
+    // bool found = false;
     for (size_t i = 1; i <= slot_count(); i++)
     {
         slot_select(i);
@@ -212,26 +237,26 @@ int slots_initialize()
                 if (!result)
                 {
                     result = read_eeprom_code(eeprom);
-                    if ( !result)
+                    if (!result)
                     {
                         memcpy(&slot_info[i].code_pic, &pic_arm, eeprom_buffer.code_pic_len);
-                        found = true;
+                        // found = true;
                     }
                 }
             }
         }
     }
-    if (!found)
-    {
-        setup_mock(&slot_info[0], "Colibri MCU3", "A", carrier, carrier_len);
-        setup_mock(&slot_info[1], "Colibri AIV", "B", io_aiv, io_aiv_len);
-        setup_mock(&slot_info[2], "Colibri AIC", "B", io_aic, io_aic_len);
-        setup_mock(&slot_info[3], "Colibri AQV", "B", io_aqv, io_aqv_len);
-        setup_mock(&slot_info[4], "Colibri PID1", "B", io_pid1, io_pid1_len);
-        setup_mock(&slot_info[5], "Colibri SSR", "A", io_ssr, io_ssr_len);
-        setup_mock(&slot_info[6], "Colibri DIO1", "A", io_dio1, io_dio1_len);
-        setup_mock(&slot_info[7], "<empty>", " ", io_empty, io_empty_len);
-    }
+    // if (!found)
+    // {
+    //     setup_mock(&slot_info[0], "Colibri MCU3", "A", carrier, carrier_len);
+    //     setup_mock(&slot_info[1], "Colibri AIV", "B", io_aiv, io_aiv_len);
+    //     setup_mock(&slot_info[2], "Colibri AIC", "B", io_aic, io_aic_len);
+    //     setup_mock(&slot_info[3], "Colibri AQV", "B", io_aqv, io_aqv_len);
+    //     setup_mock(&slot_info[4], "Colibri PID1", "B", io_pid1, io_pid1_len);
+    //     setup_mock(&slot_info[5], "Colibri SSR", "A", io_ssr, io_ssr_len);
+    //     setup_mock(&slot_info[6], "Colibri DIO1", "A", io_dio1, io_dio1_len);
+    //     setup_mock(&slot_info[7], "<empty>", " ", io_empty, io_empty_len);
+    // }
     for (int i = 0; i <= slot_count(); i++)
     {
         slot_info_t* slot = &slot_info[i];
@@ -268,12 +293,8 @@ int slots_initialize()
         }
         slot->vmt = vmt;
 
-        // 2. Call the driver's init() life-cycle function.
-        if (slot->vmt && slot->vmt->init)
-        {
-            slot_call_driver_with_r9((void*)slot->vmt->init,
-                                     slot->driver_ram, 0, 0);
-        }
+        driver_init(slot);
+        driver_loaded(slot);
     }
     for (int i = 0; i <= slot_count(); i++)
     {
@@ -288,16 +309,11 @@ int slots_initialize()
     return 0;
 }
 
-void slots_tick(uint64_t now, int slot_number)
+void slots_tick(uint8_t slot_number, uint64_t now)
 {
     int32_t event_id = create_io_event(slot_number, COLIBRI_EVENT_TYPE_TIME_PERIOD, 0);
     slot_info_t* slot = &slot_info[slot_number];
-    if (slot->vmt && slot->vmt->event)
-    {
-        slot_call_driver_event((void*)slot->vmt->event,
-                               slot->driver_ram,
-                               event_id, now);
-    }
+    driver_event(slot, event_id, now);
 }
 
 int slot_set_power_state(uint8_t slot, bool enabled)
@@ -330,7 +346,7 @@ bool slot_is_reset(uint8_t slot)
     return (not_in_reset & 1 << slot) == 0;
 }
 
-void slot_select(unsigned int slot)
+void slot_select(uint8_t slot)
 {
     // Setting the I2C MUX and setting the SPI CS pins is NOT NEEDED thanks to the Zephyr device tree.
     // it sets all of that when we access the I2C/SPI devices on the I/O modules.

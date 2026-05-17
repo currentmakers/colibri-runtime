@@ -6,7 +6,6 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(colibri_runtime C CXX ASM) # Enable ASM here, within the project call
 
 target_include_directories(app PRIVATE
-        colibri-sdk/
         lua/
         include/
 )
@@ -24,19 +23,21 @@ target_sources(app PRIVATE
         src/slots/host-api.c
         src/slots/slots.c
         src/slots/slotcount.c
+        src/slots/i2c.c
+        src/slots/spi.c
         src/tasks/io-subsystem.c
         src/tasks/rgb-updater.c
         src/tasks/supervisor.c
 
-        io-drivers/carrier.c
-        io-drivers/io_aic.c
-        io-drivers/io_aiv.c
-        io-drivers/io_aqv.c
-        io-drivers/io_dio1.c
-        io-drivers/io_empty.c
-        io-drivers/io_pid1.c
-        io-drivers/io_ssr.c
-        io-drivers/rgb_blink.c
+#        io-drivers/carrier.c
+#        io-drivers/io_aic.c
+#        io-drivers/io_aiv.c
+#        io-drivers/io_aqv.c
+#        io-drivers/io_dio1.c
+#        io-drivers/io_empty.c
+#        io-drivers/io_pid1.c
+#        io-drivers/io_ssr.c
+#        io-drivers/rgb_blink.c
 
         lua/lapi.c
         lua/lbaselib.c
@@ -72,4 +73,10 @@ target_compile_definitions(app PRIVATE
         ARM
         M4_COMPILER_GCC
 )
+
 target_link_libraries(app PUBLIC m)
+
+# TODO: Build of Colibri SDK, for creating I/O module drivers.
+#
+# For now, that is symlinked into colibri-drivers
+

@@ -5,6 +5,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lstate.h"
+#include "colibri-sdk/colibri.h"
 #include "colibri/luaInterface.h"
 #include "colibri/slots.h"
 
