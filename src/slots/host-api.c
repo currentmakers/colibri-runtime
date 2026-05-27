@@ -1,6 +1,7 @@
 
 #include "colibri/leds.h"
 #include "colibri/slots.h"
+#include "colibri-sdk/colibri-events.h"
 
 static int ok_color = 0x000400;
 static int error_color = 0x080000;
@@ -57,7 +58,12 @@ static void spi_read(uint8_t address, uint8_t* to_write, uint8_t* to_read, uint1
     slot_spi_read(address, to_write, to_read, length);
 }
 
+
 const Host_API_t host_api = {
+    .get = events_get,
+    .publish = events_publish,
+    .subscribe = events_subscribe,
+    .unsubscribe = events_unsubscribe,
     .set_rgb_color = set_rgb_color,
     .i2c_write = i2c_write,
     .i2c_read = i2c_read,

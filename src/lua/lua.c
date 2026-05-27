@@ -1,41 +1,15 @@
 #include <stdlib.h>
 #include <zephyr/kernel.h>
-#include <zephyr/linker/section_tags.h>
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
-#include "lstate.h"
 #include "colibri-sdk/colibri.h"
+#include "colibri-sdk/colibri-events.h"
 #include "colibri/luaInterface.h"
-#include "colibri/slots.h"
-
-#define LUA_STACK_SIZE   (32 * 1024)   /* 32 KiB, placed in CCM */
-#define LUA_PRIORITY     10
-#define LUA_TICK_PERIOD  K_MSEC(100)
-
-/*
- * Lua thread stack in CCM SRAM (0x10000000 on STM32F405).
- *
- *  - __dtcm_noinit_section: skip boot-time zeroing; Zephyr initializes
- *    the active part of the stack itself when the thread starts.
- *  - The macro yields an array that satisfies Zephyr's stack-alignment
- *    requirements for the architecture.
- *
- * Note: K_THREAD_STACK_DEFINE does not accept a section attribute, so we
- * declare the array manually using the same underlying primitives.
- */
-__dtcm_noinit_section
-static K_KERNEL_STACK_MEMBER(lua_thread_stack, LUA_STACK_SIZE);
-
-static struct k_thread  lua_thread_data;
-static k_tid_t          lua_thread_tid;
 
 static lua_State *lua_state;
 
-/* ------------------------------------------------------------------------- */
-/* One tick of the Lua event loop. Called from the Lua thread context only.  */
-/* ------------------------------------------------------------------------- */
-static void lua_tick(void)
+void lua_event(event_t event, int64_t value)
 {
     lua_getglobal(lua_state, "event");
 
@@ -45,11 +19,8 @@ static void lua_tick(void)
         return;
     }
 
-    lua_Number event_id = create_user_event(COLIBRI_EVENT_TYPE_TIME_PERIOD, 0);
-    lua_pushnumber(lua_state, event_id);
-
-    lua_Number now = (lua_Number) k_uptime_get();
-    lua_pushnumber(lua_state, now);
+    lua_pushinteger(lua_state, event.value);
+    lua_pushinteger(lua_state, value);
 
     if (lua_pcall(lua_state, 2, 0, 0) != LUA_OK) {
         printk("Lua Error: %s\n", lua_tostring(lua_state, -1));
@@ -60,55 +31,159 @@ static void lua_tick(void)
     lua_gc(lua_state, LUA_GCCOLLECT, 0);
 }
 
-/* ------------------------------------------------------------------------- */
-/* Thread entry point: initialize the VM, load the script, then tick forever.*/
-/* ------------------------------------------------------------------------- */
-static void lua_thread_entry(void *p1, void *p2, void *p3)
+int lua_publish(lua_State *L)
 {
-    ARG_UNUSED(p1);
-    ARG_UNUSED(p2);
-    ARG_UNUSED(p3);
+    int32_t event = (int32_t) luaL_checknumber(L, 1);
+    int64_t value = (int64_t) luaL_checknumber(L, 2);
+    event_t ev;
+    ev.value = event;
+    events_publish(ev, value);
+    return 1;
+}
 
+int lua_event_get(lua_State *L)
+{
+    int32_t event = (int32_t) luaL_checknumber(L, 1);
+    event_t ev;
+    ev.value = event;
+    int64_t value = events_get(ev);
+    // TODO/NOTE/WARNING: lua_Number is a floating point type, which may not be suitable for representing large integer values. We need to be very aware of this. Update documentation.
+    lua_pushnumber(L, (lua_Number)value);
+    return 1;
+}
+
+
+int lua_subscribe(lua_State *L)
+{
+    int32_t event = (int32_t) luaL_checknumber(L, 1);
+    uint32_t index = (uint32_t) events_subscribe(event, lua_event);
+    lua_pushinteger(L, index);
+    return 1;
+}
+
+int lua_unsubscribe(lua_State *L)
+{
+    int32_t index = (int32_t) luaL_checknumber(L, 1);
+    events_unsubscribe((void *)index);
+    return 1;
+}
+
+static const luaL_Reg system_api[] = {
+    {"publish", lua_publish},
+    {"subscribe", lua_subscribe},
+    {"unsubscribe", lua_unsubscribe},
+    {"event_value", lua_event_get},
+    {NULL, NULL}
+};
+
+int lua_initialize()
+{
     lua_state = luaL_newstate();
     if (lua_state == NULL) {
         printk("lua: cannot create state: not enough memory\n");
-        return;
+        return -ENOMEM;
     }
     luaL_openlibs(lua_state);
     lua_register_event_constants(lua_state);
     lua_install_uc_globals(lua_state);
 
-    if (lua_load_script(lua_state, "") != 0) {
+    int error = lua_load_script(lua_state, "");
+    if (error != 0) {
         printk("lua: unable to load script\n");
-        /* Continue ticking anyway; 'event' lookup will just fail cleanly. */
+        /* Script not loaded, nothing will be subscribed to. */
+        return error;
     }
+    return 0;
+}
 
-    for (;;) {
-        lua_tick();
-        k_sleep(LUA_TICK_PERIOD);
+
+//This function is called by Lua if it cannot handle an occured error.
+void luaAbort()
+{
+    lua_writestringerror("luaAbort", sizeof("luaAbort"));
+    while (1)
+    {
     }
 }
 
-/* ------------------------------------------------------------------------- */
-/* Public init: spawn the Lua thread. Returns 0 on success.                  */
-/* ------------------------------------------------------------------------- */
-int lua_initialize(void)
+void lua_install_uc_globals(lua_State *L)
 {
-    lua_thread_tid = k_thread_create(
-        &lua_thread_data,
-        lua_thread_stack,
-        K_KERNEL_STACK_SIZEOF(lua_thread_stack),
-        lua_thread_entry,
-        NULL, NULL, NULL,
-        LUA_PRIORITY,
-        0,
-        K_NO_WAIT);
-
-    if (lua_thread_tid == NULL) {
-        printk("lua: failed to create thread\n");
-        return -ENOMEM;
+    for (const luaL_Reg *r = system_api; r->name != NULL; r++) {
+        lua_pushcfunction(L, r->func);
+        lua_setglobal(L, r->name);
     }
+}
 
-    k_thread_name_set(lua_thread_tid, "lua");
-    return 0;
+LUAMOD_API int luaopen_uc(lua_State* L)
+{
+    luaL_newlib(L, system_api);
+    return 1;
+}
+
+void lua_register_event_constants(lua_State *L)
+{
+    lua_newtable(L);
+
+    lua_pushstring(L, "UNKNOWN");
+    lua_pushinteger(L, 0x0000);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "TIME_PERIOD");
+    lua_pushinteger(L, 0x0100);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "TIME");
+    lua_pushinteger(L, 0x0200);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "COUNTER");
+    lua_pushinteger(L, 0x0300);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "ERROR_CODE");
+    lua_pushinteger(L, 0x0400);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "MEASURED_VALUE");
+    lua_pushinteger(L, 0x0500);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "COMPUTED_VALUE");
+    lua_pushinteger(L, 0x0600);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "SETPOINT");
+    lua_pushinteger(L, 0x0700);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "MIN_VALUE");
+    lua_pushinteger(L, 0x0800);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "MAX_VALUE");
+    lua_pushinteger(L, 0x0900);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "LOW_THRESHOLD");
+    lua_pushinteger(L, 0x0A00);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "HIGH_THRESHOLD");
+    lua_pushinteger(L, 0x0B00);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "RUN_INDICATION");
+    lua_pushinteger(L, 0x0C00);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "ALARM_INDICATION");
+    lua_pushinteger(L, 0x0D00);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "RGB_SET");
+    lua_pushinteger(L, 0x0E00);
+    lua_settable(L, -3);
+
+    // 3. Name the table globally as "HW" and pop it off the stack
+    lua_setglobal(L, "events");
 }

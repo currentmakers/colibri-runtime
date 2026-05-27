@@ -18,11 +18,7 @@ do
         end
     end
 
-    function loaded()
-        set_rgb_color(0)
-    end
-
-    function unloading()
+    function terminating()
         set_rgb_color(0)
     end
 end

@@ -20,7 +20,7 @@ typedef struct
 } slot_info_t;
 
 int slots_initialize();
-void slots_tick(uint8_t slot, uint64_t now);
+void slots_tick(uint8_t slot, int64_t now);
 
 int slot_set_power_state(uint8_t slot, bool enabled);
 int slot_set_reset_state(uint8_t slot, bool asserted);

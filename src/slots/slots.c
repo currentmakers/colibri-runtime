@@ -4,8 +4,6 @@
 
 #include <stdlib.h>
 
-// include "mock/colibri-mock.h"
-
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/eeprom.h>
@@ -23,12 +21,12 @@ static void slot_call_driver_with_r9_4(void* func_ptr, void* r9_target_ram, uint
                                        uint32_t arg3);
 
 /*
- * Helper for calling driver->event(int32_t id, uint64_t value) with the
+ * Helper for calling driver->event(int32_t id, int64_t value) with the
  * correct AAPCS register placement: id in r0, value in r2:r3, r1 unused.
  */
 
 static inline void slot_call_driver_event(void* func_ptr, void* r9_target_ram,
-                                          int32_t id, uint64_t value)
+                                          int32_t id, int64_t value)
 {
     slot_call_driver_with_r9_4(func_ptr, r9_target_ram,
                                (uint32_t)id,
@@ -187,7 +185,7 @@ static void driver_init(slot_info_t* slot)
     }
 }
 
-static void driver_event(slot_info_t* slot, int32_t event_id, uint64_t value)
+static void driver_event(slot_info_t* slot, int32_t event_id, int64_t value)
 {
     if (slot->vmt && slot->vmt->event)
     {
@@ -195,18 +193,10 @@ static void driver_event(slot_info_t* slot, int32_t event_id, uint64_t value)
     }
 }
 
-static void driver_loaded(slot_info_t* slot)
-{
-    if (slot->vmt && slot->vmt->loaded)
-    {
-        slot_call_driver_with_r9((void*)slot->vmt->loaded, slot->driver_ram, 0, 0);
-    }
-}
-
 int slots_initialize()
 {
     if (initialized)
-        return slot_count();
+        return 0;
     slot_count_init();
     int result = power_on();
     if (result) return result;
@@ -246,20 +236,14 @@ int slots_initialize()
             }
         }
     }
-    // if (!found)
-    // {
-    //     setup_mock(&slot_info[0], "Colibri MCU3", "A", carrier, carrier_len);
-    //     setup_mock(&slot_info[1], "Colibri AIV", "B", io_aiv, io_aiv_len);
-    //     setup_mock(&slot_info[2], "Colibri AIC", "B", io_aic, io_aic_len);
-    //     setup_mock(&slot_info[3], "Colibri AQV", "B", io_aqv, io_aqv_len);
-    //     setup_mock(&slot_info[4], "Colibri PID1", "B", io_pid1, io_pid1_len);
-    //     setup_mock(&slot_info[5], "Colibri SSR", "A", io_ssr, io_ssr_len);
-    //     setup_mock(&slot_info[6], "Colibri DIO1", "A", io_dio1, io_dio1_len);
-    //     setup_mock(&slot_info[7], "<empty>", " ", io_empty, io_empty_len);
-    // }
     for (int i = 0; i <= slot_count(); i++)
     {
         slot_info_t* slot = &slot_info[i];
+        if ( slot->vendor == NULL || slot->model == NULL || slot->code_pic[0] == 0)
+        {
+            // Then there is either no I/O module mounted, or the I/O module is not initialized from factory.
+            continue;
+        }
         uint32_t code_base = (uint32_t)&slot->code_pic[0];
         uint32_t thumb_entry_address = code_base | 0x1u;
 
@@ -294,7 +278,6 @@ int slots_initialize()
         slot->vmt = vmt;
 
         driver_init(slot);
-        driver_loaded(slot);
     }
     for (int i = 0; i <= slot_count(); i++)
     {
@@ -309,7 +292,7 @@ int slots_initialize()
     return 0;
 }
 
-void slots_tick(uint8_t slot_number, uint64_t now)
+void slots_tick(uint8_t slot_number, int64_t now)
 {
     int32_t event_id = create_io_event(slot_number, COLIBRI_EVENT_TYPE_TIME_PERIOD, 0);
     slot_info_t* slot = &slot_info[slot_number];
@@ -411,7 +394,7 @@ static uint32_t slot_call_driver_with_r9_ret(void* func_ptr, void* r9_target_ram
  *
  * Note on AAPCS: a 64-bit argument must start on an even-numbered
  * register. So a function declared like
- *     void event(int32_t id, uint64_t value)
+ *     void event(int32_t id, int64_t value)
  * receives:  id    in r0
  *            (r1 = padding, unused)
  *            value low  in r2

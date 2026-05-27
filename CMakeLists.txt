@@ -12,12 +12,12 @@ target_include_directories(app PRIVATE
 
 target_sources(app PRIVATE
         src/main.c
+        src/events/events.c
         src/fs/littlefs.c
         src/fs/nvs.c
         src/leds/neopixels.c
         src/leds/leds.c
         src/lua/load-lua-test.c
-        src/lua/luaInterface.c
         src/lua/lua.c
         src/modbus/modbus.c
         src/slots/host-api.c
@@ -28,16 +28,6 @@ target_sources(app PRIVATE
         src/tasks/io-subsystem.c
         src/tasks/rgb-updater.c
         src/tasks/supervisor.c
-
-#        io-drivers/carrier.c
-#        io-drivers/io_aic.c
-#        io-drivers/io_aiv.c
-#        io-drivers/io_aqv.c
-#        io-drivers/io_dio1.c
-#        io-drivers/io_empty.c
-#        io-drivers/io_pid1.c
-#        io-drivers/io_ssr.c
-#        io-drivers/rgb_blink.c
 
         lua/lapi.c
         lua/lbaselib.c

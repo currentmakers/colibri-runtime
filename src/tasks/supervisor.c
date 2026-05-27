@@ -20,12 +20,13 @@ static void supervisor_tick(struct k_work *work)
     k_work_schedule_for_queue(&supervisor_queue, &supervisor_update_work, K_MSEC(5000));
 }
 
-void supervisor_initialize()
+int supervisor_initialize()
 {
     k_work_queue_start(&supervisor_queue, supervisor_work_queue_stack,
                        K_THREAD_STACK_SIZEOF(supervisor_work_queue_stack),
                        SUPERVISOR_PRIORITY, NULL);
 
     k_work_init_delayable(&supervisor_update_work, supervisor_tick);
-    k_work_schedule_for_queue(&supervisor_queue, &supervisor_update_work, K_NO_WAIT);
+    int result = k_work_schedule_for_queue(&supervisor_queue, &supervisor_update_work, K_NO_WAIT);
+    return result < 0 ? result : 0;
 }
