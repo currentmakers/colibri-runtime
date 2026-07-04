@@ -17,6 +17,7 @@ manifest:
           - hal_nordic
           - hal_rpi_pico
           - cmsis_6
+          - zcbor
     - name: zephyr-cm
       url: https://github.com/currentmakers/zephyr-cm
       revision: master 

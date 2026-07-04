@@ -28,7 +28,17 @@
 #define COLIBRI_EVENT_TYPE_RUN_INDICATION     0x10
 #define COLIBRI_EVENT_TYPE_RGB_INDICATOR      0x11
 #define COLIBRI_EVENT_TYPE_TIME               0x12
+#define COLIBRI_EVENT_TYPE_MODBUS_UPDATE      0x13
+#define COLIBRI_EVENT_TYPE_MQTT               0x14
 
+//   Event format
+//
+//   +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+//   | 31 | 30 | 29 | 28 | 27 | 26 | 25 | 24 | 23 | 22 | 21 | 20 | 19 | 18 | 17 | 16 | 15 | 14 | 13 | 12 | 11 | 10 |  9 |  8 |  7 |  6 |  5 |  4 |  3 |  2 |  1 |  0 |
+//   +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+//   |      Slot              | IO |                Event Type                       |                            Event Parameter                                    |
+//   +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+//
 #define create_io_event(SLOT, EVENT_TYPE, EVENT_PARAM) (SLOT<<27 | 1<<26 | (EVENT_TYPE<<16) | EVENT_PARAM)
 #define create_user_event(EVENT_TYPE, EVENT_PARAM) (EVENT_TYPE<<16 | EVENT_PARAM)
 
@@ -60,6 +70,5 @@ int64_t events_get(event_t event);
 void events_publish(event_t event, int64_t value);
 void* events_subscribe(uint16_t event_type, event_callback callback);
 void events_unsubscribe(void* subscription);
-
 
 #endif //COLIBRI_RUNTIME_EVENTS_H

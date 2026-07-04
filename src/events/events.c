@@ -57,11 +57,13 @@ void* events_subscribe(uint16_t event_type, event_callback callback)
         }
     }
     printk("Failed to add subscription, no free slots available\n");
-    return NULL;
+    return (void *) -1;
 }
 
 void events_unsubscribe(void* subscription)
 {
+    if ( subscription == (void *) -1 )
+        return;
     size_t index = (size_t)subscription;
     if (index < EVENTS_MAX_SUBSCRIPTIONS)
     {

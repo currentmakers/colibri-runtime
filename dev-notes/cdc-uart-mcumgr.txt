@@ -1,0 +1,56 @@
+mcumgr over USB CDC ACM (UART transport) — bring-up notes
+=========================================================
+
+Getting `~/go/bin/mcumgr --conntype=serial` working over USB CDC ACM on the
+colibri_mcu3 (STM32F405) board required four separate fixes. Symptoms were
+misleading, so they're recorded here with the reasoning.
+
+1. CONFIG_UART_MCUMGR=y  (prj.conf)
+   - CONFIG_MCUMGR_TRANSPORT_UART has `depends on UART_MCUMGR` (NOT `select`).
+     UART_MCUMGR defaults to n, so setting only MCUMGR_TRANSPORT_UART=y is
+     silently dropped by Kconfig and the whole transport is never compiled.
+   - Symptom: USB enumerates and DTR toggles, but mcumgr gets no response at all.
+   - Verify build/zephyr/.config actually contains both symbols =y.
+
+2. hw-flow-control;  (colibri_mcu3.dts, on the cdc_acm_uart0 node)
+   - cdc_acm_poll_out() DISCARDS bytes when the TX ring buffer fills, unless
+     dev_data->flow_ctrl is true. flow_ctrl comes from the DT `hw-flow-control`
+     property. USB has no real RTS/CTS; the property just flips poll_out into
+     the blocking (k_msleep) path so it waits for buffer space instead of
+     dropping data.
+   - Symptom: small responses (echo) work; large responses (fs download) get
+     truncated -> bad CRC -> NMP timeout.
+
+3. CONFIG_MCUMGR_GRP_OS=y  (prj.conf)
+   - `echo` lives in the OS management group. GRP_OS defaults to n; only GRP_FS
+     was enabled. GRP_OS_ECHO is default y once GRP_OS is on.
+   - Symptom: `mcumgr echo "Hello"` returns only a bare LF (0x0a) — the error
+     frame for an unhandled group/command, with no payload.
+
+4. CONFIG_MCUMGR_TRANSPORT_WORKQUEUE_STACK_SIZE=4096  (prj.conf)
+   - mcumgr SMP requests are processed on a dedicated thread named "mcumgr smp"
+     (smp.c: K_THREAD_STACK_DEFINE with this Kconfig), default 2048.
+   - The fs download handler reads LittleFS-over-SPI-NOR, which is stack-hungry,
+     and overflows 2048.
+   - Symptom: "ZEPHYR FATAL ERROR 2: Stack overflow ... Current thread: (mcumgr smp)".
+   - NOTE: the SMP handler does NOT run on the system workqueue. Raising
+     CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE does nothing here — wrong thread.
+
+Debugging tips
+--------------
+- Enable CONFIG_THREAD_NAME=y + CONFIG_THREAD_MONITOR=y so panics print the
+  faulting thread name instead of "(unknown)", and the thread_analyzer dump
+  labels every stack. This is what identified "mcumgr smp".
+- CONFIG_EXCEPTION_STACK_TRACE=y adds a backtrace.
+- "Fault during interrupt handling" on a stack overflow just means an IRQ's
+  hardware frame push tipped an already-near-full thread stack over the edge;
+  the fault is attributed to whichever thread was running.
+
+Test commands
+-------------
+  sudo ~/go/bin/mcumgr --conntype=serial \
+    --connstring="dev=/dev/ttyACM1,baud=115200" echo "Hello"
+
+  sudo ~/go/bin/mcumgr --conntype=serial \
+    --connstring="dev=/dev/ttyACM1,baud=115200" \
+    fs download /mcu/startlog.txt /dev/stdout

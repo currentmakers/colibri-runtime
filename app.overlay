@@ -2,13 +2,6 @@
 	aliases {
 		modbus0 = &modbus0;
 	};
-
-	rs485_ctrl {
-		compatible = "gpio-leds";
-		re_pin: re_pin {
-			gpios = <&gpiob 15 GPIO_ACTIVE_LOW>;
-		};
-	};
 };
 
 &usart1 {
@@ -18,24 +11,5 @@
 		compatible = "zephyr,modbus-serial";
 		status = "okay";
 		de-gpios = <&gpiob 12 GPIO_ACTIVE_HIGH>;
-	};
-};
-
-
-&w25q128_mcu {
-	partitions {
-		compatible = "fixed-partitions";
-		#address-cells = <1>;
-		#size-cells = <1>;
-
-		storage_mcu_partition: partition@0 {  // 15.4MB of LittleFS
-			label = "storage_mcu";
-			reg = <0x00000000 0x00FE0000>;
-		};
-
-		settings_mcu_partition: partition@fe0000 {  // 2x64kB for NVS settings.
-			label = "settings_mcu";
-			reg = <0x00FE0000 0x00020000>;
-		};
 	};
 };

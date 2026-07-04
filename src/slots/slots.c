@@ -294,7 +294,7 @@ int slots_initialize()
 
 void slots_tick(uint8_t slot_number, int64_t now)
 {
-    int32_t event_id = create_io_event(slot_number, COLIBRI_EVENT_TYPE_TIME_PERIOD, 0);
+    int32_t event_id = create_user_event(COLIBRI_EVENT_TYPE_TIME_PERIOD, 0);
     slot_info_t* slot = &slot_info[slot_number];
     driver_event(slot, event_id, now);
 }
