@@ -10,7 +10,7 @@ typedef struct {
 
     void (*publish)(event_t event, int64_t value);
 
-    void* (*subscribe)(uint16_t event_type, event_callback callback);
+    void* (*subscribe)(event_t event, event_callback callback);
 
     void (*unsubscribe)(void*);
 
@@ -35,7 +35,7 @@ typedef struct {
     // Typically, the implementation should subscribe to a timer event, otherwise
     // it will only be called on power-up. For instance;
     //     subscribe(TIME_100_MS);
-    void (*init)(void);
+    void (*initialize)(void);
 
     // A value was published from an id previously subscribed to.
     void (*event)(int32_t event, int64_t value);

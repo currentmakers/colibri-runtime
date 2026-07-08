@@ -1,8 +1,10 @@
 #ifndef COLIBRI_RUNTIME_LEDS_H
 #define COLIBRI_RUNTIME_LEDS_H
 
-int led_init();
-int rgb_init();
+#include <stdint.h>
+
+int led_initialize();
+int rgb_initialize();
 
 void rgb_update();
 
@@ -19,7 +21,7 @@ void rgb_set_green(int slot);
 void rgb_set_red(int slot);
 void rgb_set_blue(int slot);
 void rgb_set_rgb(int slot, int r, int g, int b);
-void rgb_set_color(int slot, int rgb);
+void rgb_set_color(int slot, int32_t rgb);
 
 
 #endif

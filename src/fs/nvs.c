@@ -7,7 +7,7 @@
 
 static struct nvs_fs fs;
 
-int nvs_init() {
+int nvs_initialize() {
     int rc;
     struct flash_pages_info info;
     const struct device *flash_dev;

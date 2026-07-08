@@ -178,10 +178,10 @@ static int read_eeprom_code(const struct device* eeprom)
 
 static void driver_init(slot_info_t* slot)
 {
-    // Call the driver's init() life-cycle function.
-    if (slot->vmt && slot->vmt->init)
+    // Call the driver's initialize() life-cycle function.
+    if (slot->vmt && slot->vmt->initialize)
     {
-        slot_call_driver_with_r9((void*)slot->vmt->init, slot->driver_ram, 0, 0);
+        slot_call_driver_with_r9((void*)slot->vmt->initialize, slot->driver_ram, 0, 0);
     }
 }
 
@@ -197,7 +197,6 @@ int slots_initialize()
 {
     if (initialized)
         return 0;
-    slot_count_init();
     int result = power_on();
     if (result) return result;
     k_msleep(5); // Allow for hardware to wake up.

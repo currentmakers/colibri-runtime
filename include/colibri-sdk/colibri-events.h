@@ -30,6 +30,8 @@
 #define COLIBRI_EVENT_TYPE_TIME               0x12
 #define COLIBRI_EVENT_TYPE_MODBUS_UPDATE      0x13
 #define COLIBRI_EVENT_TYPE_MQTT               0x14
+#define COLIBRI_EVENT_TYPE_LUA_UPDATED        0x15
+#define COLIBRI_EVENT_TYPE_END_OF_LIST        0x16
 
 //   Event format
 //
@@ -47,10 +49,10 @@ typedef union
     uint32_t value;
     struct
     {
-        uint8_t slot:5;
-        uint8_t io:1;
-        uint16_t type:10;
         uint16_t parameter:16;
+        uint16_t type:10;
+        uint8_t io:1;
+        uint8_t slot:5;
     };
 } event_t;
 
@@ -68,7 +70,7 @@ typedef struct
 int events_initialize();
 int64_t events_get(event_t event);
 void events_publish(event_t event, int64_t value);
-void* events_subscribe(uint16_t event_type, event_callback callback);
+void* events_subscribe(event_t event, event_callback callback);
 void events_unsubscribe(void* subscription);
 
-#endif //COLIBRI_RUNTIME_EVENTS_H
+#endif

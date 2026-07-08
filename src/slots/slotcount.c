@@ -16,7 +16,7 @@ int slot_count()
     return number_of_slots;
 }
 
-void slot_count_init() {
+void slot_count_initialize() {
     number_of_slots = 0;
     for (int i = 0; i < ARRAY_SIZE(slot_pins); i++) {
         gpio_pin_configure_dt(&slot_pins[i], GPIO_INPUT);

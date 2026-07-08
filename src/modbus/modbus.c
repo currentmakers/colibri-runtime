@@ -88,7 +88,7 @@ static struct modbus_user_callbacks mbs_cbs = {
     .holding_reg_wr_fp = write_float_holding
 };
 
-int modbus_init(struct modbus_user_callbacks *callbacks) {
+int modbus_initialize(struct modbus_user_callbacks *callbacks) {
 
     int iface = modbus_iface_get_by_name("modbus0");
     const static struct modbus_iface_param server_param = {

@@ -5,7 +5,6 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
-#include "colibri-sdk/colibri.h"
 #include "colibri-sdk/colibri-events.h"
 #include "colibri/luaInterface.h"
 
@@ -20,7 +19,9 @@ static lua_State* lua_state;
 #define ENV_FILE_MAX  512
 #define FULL_PATH_MAX 256
 
+static char env_buf[ENV_FILE_MAX] = {0};
 static char lua_path[LUA_PATH_MAX] = DEFAULT_LUA_PATH;
+static void* subscription = NULL;
 
 void lua_event(event_t event, int64_t value)
 {
@@ -33,10 +34,11 @@ void lua_event(event_t event, int64_t value)
         return;
     }
 
-    lua_pushinteger(lua_state, event.value);
+    lua_pushinteger(lua_state, event.type);
+    lua_pushinteger(lua_state, event.parameter);
     lua_pushinteger(lua_state, value);
 
-    if (lua_pcall(lua_state, 2, 0, 0) != LUA_OK)
+    if (lua_pcall(lua_state, 3, 0, 0) != LUA_OK)
     {
         printk("Lua Error: %s\n", lua_tostring(lua_state, -1));
         lua_pop(lua_state, 1);
@@ -48,10 +50,11 @@ void lua_event(event_t event, int64_t value)
 
 int lua_publish(lua_State* L)
 {
-    int32_t event = (int32_t)luaL_checknumber(L, 1);
-    int64_t value = (int64_t)luaL_checknumber(L, 2);
+    int32_t event = (int32_t)luaL_checkinteger(L, 1); // event_type
+    int32_t parameter = (int32_t)luaL_checkinteger(L, 2); // event parameter
+    int64_t value = luaL_checkinteger(L, 3);
     event_t ev;
-    ev.value = event;
+    ev.value = create_user_event(event, parameter);
     events_publish(ev, value);
     return 1;
 }
@@ -70,17 +73,34 @@ int lua_event_get(lua_State* L)
 
 int lua_subscribe(lua_State* L)
 {
-    int32_t event = (int32_t)luaL_checknumber(L, 1);
-    uint32_t index = (uint32_t)events_subscribe(event, lua_event);
+    int n = lua_gettop(L);
+    if (n != 2)
+        return luaL_error(L, "subscribe(event_type, parameter): expected 2 arguments, got %d", n);
+
+    uint16_t event_type = ((uint16_t)luaL_checkinteger(L, 1)) & 0x03FF; // mask out 10 bits
+    uint16_t event_parameter = (uint16_t)luaL_checkinteger(L, 2);
+    int8_t slot = (int8_t)luaL_optinteger(L, 3, -1);
+    event_t event;
+    if (slot == -1)
+        event = (event_t){create_user_event(event_type, event_parameter)};
+    else
+        event = (event_t){create_io_event(slot, event_type, event_parameter)};
+    int32_t index = (int32_t)events_subscribe(event, lua_event);
+    if (index == -1)
+        return luaL_error(L, "subscribe(event_type, parameter) failed. Too many subscriptions");
     lua_pushinteger(L, index);
     return 1;
 }
 
 int lua_unsubscribe(lua_State* L)
 {
-    int32_t index = (int32_t)luaL_checknumber(L, 1);
+    int n = lua_gettop(L);
+    if (n != 1)
+        return luaL_error(L, "unsubscribe(subscription): expected 1 argument, got %d", n);
+
+    int32_t index = (int32_t)luaL_checkinteger(L, 1);
     events_unsubscribe((void*)index);
-    return 1;
+    return 0;
 }
 
 static const luaL_Reg system_api[] = {
@@ -154,12 +174,12 @@ static int read_environment_file(char* buf, size_t buf_size)
         return rc;
     }
     ssize_t n = fs_read(&file, buf, buf_size - 1);
+    buf[n] = '\0';
     fs_close(&file);
     if (n < 0)
     {
-        return (int)n;
+        return n;
     }
-    buf[n] = '\0';
     return 0;
 }
 
@@ -276,8 +296,123 @@ static int resolve_script_path(const char* script, char* out, size_t out_size)
     return -ENOENT;
 }
 
-int lua_initialize()
+// This function is called by Lua if it cannot handle an error that occurred.
+void luaAbort()
 {
+    lua_writestringerror("luaAbort", sizeof("luaAbort"));
+    printk("luaAbort\n");
+}
+
+static void lua_install_uc_globals(lua_State* L)
+{
+    for (const luaL_Reg* r = system_api; r->name != NULL; r++)
+    {
+        lua_pushcfunction(L, r->func);
+        lua_setglobal(L, r->name);
+    }
+}
+
+LUAMOD_API int luaopen_uc(lua_State* L)
+{
+    luaL_newlib(L, system_api);
+    return 1;
+}
+
+static void lua_register_event_constants(lua_State* L)
+{
+    lua_newtable(L);
+
+    lua_pushstring(L, "UNKNOWN");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_UNKNOWN);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "TIME_PERIOD");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_TIME_PERIOD);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "TIME");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_TIME);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "OUTPUT");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_OUTPUT);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "COUNTER");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_COUNTER);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "ERROR_CODE");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_ERROR_CODE);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "MEASURED_VALUE");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_MEASURED_VALUE);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "COMPUTED_VALUE");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_COMPUTED_VALUE);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "SETPOINT");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_SETPOINT);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "MIN_VALUE");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_MIN_VALUE);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "MAX_VALUE");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_MAX_VALUE);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "LOW_THRESHOLD");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_LOW_THRESHOLD);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "HIGH_THRESHOLD");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_HIGH_THRESHOLD);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "RUN_INDICATION");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_RUN_INDICATION);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "ALARM_INDICATION");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_ALARM_INDICATION);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "RGB_SET");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_RGB_INDICATOR);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "MODBUS_UPDATE");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_MODBUS_UPDATE);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "MQTT");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_MQTT);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "CONFIG");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_CONFIG);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "ALL");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_ALL);
+    lua_settable(L, -3);
+
+    lua_pushstring(L, "NONE");
+    lua_pushinteger(L, COLIBRI_EVENT_TYPE_NONE);
+    lua_settable(L, -3);
+
+    lua_setglobal(L, "events");
+}
+
+static int lua_restart()
+{
+    int error;
+
     lua_state = luaL_newstate();
     if (lua_state == NULL)
     {
@@ -298,23 +433,24 @@ int lua_initialize()
     //    script names.
     // 5. Load every script listed in LUA_INIT= (comma-separated). Absolute
     //    names are used as-is; relative names are resolved against lua_path.
-
-    char env_buf[ENV_FILE_MAX];
-    int error = read_environment_file(env_buf, sizeof(env_buf));
-    if (error == -ENOENT)
+    if (env_buf[0] == '\0')
     {
-        printk("lua: %s not found, creating defaults\n", ENV_FILE_PATH);
-        error = create_default_environment_file();
+        error = read_environment_file(env_buf, sizeof(env_buf));
+        if (error == -ENOENT)
+        {
+            printk("lua: %s not found, creating defaults\n", ENV_FILE_PATH);
+            error = create_default_environment_file();
+            if (error != 0)
+            {
+                return error;
+            }
+            error = read_environment_file(env_buf, sizeof(env_buf));
+        }
         if (error != 0)
         {
+            printk("lua: unable to read %s: %d\n", ENV_FILE_PATH, error);
             return error;
         }
-        error = read_environment_file(env_buf, sizeof(env_buf));
-    }
-    if (error != 0)
-    {
-        printk("lua: unable to read %s: %d\n", ENV_FILE_PATH, error);
-        return error;
     }
 
     /*
@@ -337,7 +473,8 @@ int lua_initialize()
         }
     }
 
-    if (lua_init_value == NULL) {
+    if (lua_init_value == NULL)
+    {
         printk("lua: no LUA_INIT entries found in %s\n", ENV_FILE_PATH);
         /* No scripts to load - state is initialized, just nothing
          * subscribed to events yet. */
@@ -349,29 +486,34 @@ int lua_initialize()
      * names are used as-is; relative names are resolved against lua_path.
      * Stop at the first failure so the caller sees a useful error code.
      */
-    char *saveptr2 = NULL;
-    for (char *tok = strtok_r(lua_init_value, ",", &saveptr2);
+    char* saveptr2 = NULL;
+    for (char* tok = strtok_r(lua_init_value, ",", &saveptr2);
          tok != NULL;
-         tok = strtok_r(NULL, ",", &saveptr2)) {
-        char *script = trim(tok);
-        if (script[0] == '\0') {
+         tok = strtok_r(NULL, ",", &saveptr2))
+    {
+        char* script = trim(tok);
+        if (script[0] == '\0')
+        {
             continue;
         }
         char full_path[FULL_PATH_MAX];
         error = resolve_script_path(script, full_path, sizeof(full_path));
-        if (error != 0) {
+        if (error != 0)
+        {
             printk("lua: cannot resolve script path '%s': %d\n", script, error);
             break;
         }
         printk("lua: loading script %s\n", full_path);
         error = lua_load_script(lua_state, full_path);
-        if (error != 0) {
+        if (error != 0)
+        {
             printk("lua: failed to load %s: %d\n", full_path, error);
             break;
         }
     }
     free(lua_init_value);
-    if (error != 0) {
+    if (error != 0)
+    {
         /* Script not loaded. */
         printk("lua: unable to load init scripts: %d\n", error);
         return error;
@@ -379,94 +521,14 @@ int lua_initialize()
     return 0;
 }
 
-
-// This function is called by Lua if it cannot handle an error that occurred.
-void luaAbort()
+static void lua_script_updated(event_t event, int64_t value)
 {
-    lua_writestringerror("luaAbort", sizeof("luaAbort"));
-    while (1)
-    {
-    }
+    lua_close(lua_state);
+    lua_restart();
 }
 
-void lua_install_uc_globals(lua_State* L)
+int lua_initialize()
 {
-    for (const luaL_Reg* r = system_api; r->name != NULL; r++)
-    {
-        lua_pushcfunction(L, r->func);
-        lua_setglobal(L, r->name);
-    }
-}
-
-LUAMOD_API int luaopen_uc(lua_State* L)
-{
-    luaL_newlib(L, system_api);
-    return 1;
-}
-
-void lua_register_event_constants(lua_State* L)
-{
-    lua_newtable(L);
-
-    lua_pushstring(L, "UNKNOWN");
-    lua_pushinteger(L, 0x0000);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "TIME_PERIOD");
-    lua_pushinteger(L, 0x0100);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "TIME");
-    lua_pushinteger(L, 0x0200);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "COUNTER");
-    lua_pushinteger(L, 0x0300);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "ERROR_CODE");
-    lua_pushinteger(L, 0x0400);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "MEASURED_VALUE");
-    lua_pushinteger(L, 0x0500);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "COMPUTED_VALUE");
-    lua_pushinteger(L, 0x0600);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "SETPOINT");
-    lua_pushinteger(L, 0x0700);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "MIN_VALUE");
-    lua_pushinteger(L, 0x0800);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "MAX_VALUE");
-    lua_pushinteger(L, 0x0900);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "LOW_THRESHOLD");
-    lua_pushinteger(L, 0x0A00);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "HIGH_THRESHOLD");
-    lua_pushinteger(L, 0x0B00);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "RUN_INDICATION");
-    lua_pushinteger(L, 0x0C00);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "ALARM_INDICATION");
-    lua_pushinteger(L, 0x0D00);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "RGB_SET");
-    lua_pushinteger(L, 0x0E00);
-    lua_settable(L, -3);
-
-    lua_setglobal(L, "events");
+    events_subscribe((event_t){create_user_event(COLIBRI_EVENT_TYPE_LUA_UPDATED, 0)}, lua_script_updated);
+    return lua_restart();
 }

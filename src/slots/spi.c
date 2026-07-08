@@ -99,7 +99,7 @@ static const struct gpio_dt_spec sel_pins[2] = {
 
 static bool slot_spi_initialized;
 
-static int slot_spi_init(void)
+static int slot_spi_initialize(void)
 {
     if (slot_spi_initialized) {
         return 0;
@@ -161,7 +161,7 @@ static int slot_spi_set_subdevice(uint8_t address)
 
 static struct spi_config *current_slot_cfg(int *out_slot)
 {
-    if (!slot_spi_initialized && slot_spi_init() < 0) {
+    if (!slot_spi_initialized && slot_spi_initialize() < 0) {
         return NULL;
     }
 

@@ -1,0 +1,9 @@
+
+#ifndef COLIBRI_RUNTIME_MANAGEMENT_H
+#define COLIBRI_RUNTIME_MANAGEMENT_H
+
+#define EEPROM_MANAGEMENT_GROUP_ID (MGMT_GROUP_ID_PERUSER + 0)
+
+int management_initialize();
+
+#endif

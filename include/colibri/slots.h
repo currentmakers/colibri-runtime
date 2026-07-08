@@ -25,7 +25,7 @@ void slots_tick(uint8_t slot, int64_t now);
 int slot_set_power_state(uint8_t slot, bool enabled);
 int slot_set_reset_state(uint8_t slot, bool asserted);
 
-void slot_count_init();
+void slot_count_initialize();
 int slot_count();
 
 void slot_select(uint8_t slot);

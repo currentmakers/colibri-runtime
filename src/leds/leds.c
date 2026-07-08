@@ -54,7 +54,7 @@ void led_set_both()
 }
 
 
-int led_init(void)
+int led_initialize(void)
 {
     if (!gpio_is_ready_dt(&led_green))
     {

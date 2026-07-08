@@ -9,15 +9,53 @@
 #include <zephyr/fs/fs.h>
 #include <string.h>
 
-#include "colibri/slots.h"
+#include "colibri-sdk/colibri-events.h"
+#include "colibri/events.h"
 #include "colibri/fs.h"
 #include "colibri/leds.h"
 #include "colibri/luaInterface.h"
+#include "colibri/management.h"
 #include "colibri/modbus.h"
+#include "colibri/slots.h"
 #include "colibri/tasks.h"
 #include "colibri/usb.h"
 
 #define BLINK_INTERVAL_MS 300
+
+static void publish_time_period_event(int64_t time_since_start, int period)
+{
+    event_t ev = { .value = create_user_event(COLIBRI_EVENT_TYPE_TIME_PERIOD, period) };
+    events_publish_isr(ev, time_since_start);
+}
+
+static void tick_1ms_expiry(struct k_timer *timer)
+{
+    int64_t value = k_uptime_get();
+    // We are only going to support 1ms, 10ms, 100ms and 1 second TIME_PERIODs. Anything longer than that, use EVENT_TYPE_TIME
+    int32_t small_clock = (int32_t) value; // TODO: We will accept a hiccup of 648ms, once every 24 days
+    if ( small_clock % 1000 == 0 )
+    {
+        publish_time_period_event(value, 1000);
+        publish_time_period_event(value, 100);
+        publish_time_period_event(value, 10);
+        publish_time_period_event(value, 1);
+    } else if ( small_clock % 100 == 0 )
+    {
+        publish_time_period_event(value, 100);
+        publish_time_period_event(value, 10);
+        publish_time_period_event(value, 1);
+    } else if ( small_clock % 10 == 0 )
+    {
+        publish_time_period_event(value, 10);
+        publish_time_period_event(value, 1);
+    } else
+    {
+        publish_time_period_event(value, 1);
+    }
+}
+
+K_TIMER_DEFINE(tick_1ms, tick_1ms_expiry, NULL);
+
 
 static void list_directory(const char* path)
 {
@@ -33,7 +71,6 @@ static void list_directory(const char* path)
         return;
     }
 
-    printk("Listing directory: %s\n", path);
     while (1)
     {
         rc = fs_readdir(&dir, &entry);
@@ -52,12 +89,12 @@ static void list_directory(const char* path)
 
         if (entry.type == FS_DIR_ENTRY_DIR)
         {
-            printk("  [DIR]  %s\n", full_path);
+            printk("  %s/\n", full_path);
             list_directory(full_path);
         }
         else
         {
-            printk("  [FILE] %s (size: %zu)\n", full_path, entry.size);
+            printk("  %s (size: %zu)\n", full_path, entry.size);
         }
     }
     fs_closedir(&dir);
@@ -66,10 +103,23 @@ static void list_directory(const char* path)
 static int initialize_all(void)
 {
     int error;
-    error = led_init();
+    slot_count_initialize();
+    error = events_initialize();
+    if (error)
+    {
+        printk("Unable to initialize event system. Aborting boot.\n");
+        return error;
+    }
+    error = led_initialize();
     if (error)
     {
         printk("boot: Unable to initialize LEDs. Aborting boot.\n");
+        return error;
+    }
+    error = rgb_initialize();
+    if (error)
+    {
+        printk("boot: Unable to initialize Neopixel LEDs. Aborting boot.\n");
         return error;
     }
     error = slots_initialize();
@@ -78,19 +128,13 @@ static int initialize_all(void)
         printk("boot: Unable to initialize slots: %d. Aborting boot.\n", error);
         return error;
     }
-    error = nvs_init();
+    error = nvs_initialize();
     if (error)
     {
         printk("boot: Unable to initialize NVS: %d. Aborting boot.\n", error);
         return error;
     }
-    // error = littlefs_init();
-    // if (error)
-    // {
-    //     printk("boot: Unable to initialize LittleFS: %d. Aborting boot.\n", error);
-    //     return error;
-    // }
-    error = modbus_init();
+    error = modbus_initialize();
     if (error)
     {
         printk("boot: Unable to initialize Modbus: %d. Aborting boot.\n", error);
@@ -101,12 +145,12 @@ static int initialize_all(void)
     for (int i = 0; i < number_of_slots; i++)
         rgb_set_off(i);
 
-    printk("Listing /carrier directory:\n");
+    printk("Listing directories\n");
     list_directory("/carrier");
-    printk("\nListing /mcu directory:\n");
     list_directory("/mcu");
     printk("\n");
 
+    // TODO: Maybe figure out if we can enable RTC and have an actual date/time in there as well.
     printk("Writing start note to carrier board\n");
     struct fs_file_t file;
     fs_file_t_init(&file);
@@ -120,12 +164,6 @@ static int initialize_all(void)
     else
     {
         printk("Unable to write to start log.\n");
-    }
-    error = events_initialize();
-    if (error)
-    {
-        printk("Unable to initialize event system. Aborting boot.\n");
-        return error;
     }
     error = supervisor_initialize();
     if (error)
@@ -141,8 +179,11 @@ static int initialize_all(void)
     }
     error = usb_initialize();
     if (error != 0) {
-        printk("Failed to enable USB stack. Aborting boot.\n");
-        return error;
+        printk("Failed to enable USB stack. Ignoring.\n");
+    }
+    error = management_initialize();
+    if (error != 0) {
+        printk("Failed to enable management. Ignoring.\n");
     }
 
     error = lua_initialize();
@@ -153,9 +194,19 @@ static int initialize_all(void)
     return error;
 }
 
+
+void register_timer_event(void)
+{
+    k_timer_start(&tick_1ms, K_MSEC(1), K_MSEC(1));
+}
+
 int main()
 {
     int error = initialize_all();
+
+    register_timer_event();
+
+    // TODO: have a better error system, so LEDs can indicate what is wrong. E.g No user script = yellow blink.
     if (error)
     {
         led_set_red();

@@ -13,11 +13,13 @@ target_include_directories(app PRIVATE
 target_sources(app PRIVATE
         src/main.c
         src/events/events.c
+        src/fs/fs_callback.c
         src/fs/nvs.c
         src/leds/neopixels.c
         src/leds/leds.c
         src/lua/load-lua.c
         src/lua/lua.c
+        src/management/eeprom.c
         src/modbus/modbus.c
         src/slots/host-api.c
         src/slots/slots.c
