@@ -6,6 +6,8 @@
 #include <colibri-sdk/colibri-io.h>
 #define MAX_SLOTS 8
 
+struct device;   /* Zephyr device handle, forward-declared for the EEPROM API */
+
 typedef struct
 {
     uint32_t serial_number;
@@ -21,6 +23,15 @@ typedef struct
 
 int slots_initialize();
 void slots_tick(uint8_t slot, int64_t now);
+
+/*
+ * Borrow/return a slot's EEPROM device under the shared bus lock. acquire()
+ * blocks until the I/O thread is between ticks, selects the slot and returns
+ * its EEPROM device (NULL if the slot is invalid or not ready). Always pair a
+ * non-NULL acquire() with release().
+ */
+const struct device* slot_acquire(uint8_t slot);
+void slot_release(void);
 
 int slot_set_power_state(uint8_t slot, bool enabled);
 int slot_set_reset_state(uint8_t slot, bool asserted);

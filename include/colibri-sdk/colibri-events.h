@@ -1,8 +1,6 @@
 #ifndef COLIBRI_RUNTIME_EVENTS_H
 #define COLIBRI_RUNTIME_EVENTS_H
 
-#include "colibri-sdk/colibri.h"
-
 #define EVENT_MASK_TYPE 0x3FF0000
 #define EVENT_MASK_PARAMETER 0xFFFF
 #define EVENT_MASK_IO 0x04000000

@@ -1,12 +1,14 @@
-#include "colibri/slots.h"
 #include "colibri-sdk/colibri.h"
 #include "colibri-sdk/colibri-io-eeprom.h"
+#include "colibri/slots.h"
+#include "colibri/i2c.h"
 
 #include <stdlib.h>
 
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/eeprom.h>
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 
@@ -50,7 +52,6 @@ static const struct device* const eeprom_devices[] = {
     EEPROM_DEVICE_GET(7)
 };
 
-
 static const struct gpio_dt_spec pwr_pins[] = {
     DT_FOREACH_CHILD_STATUS_OKAY(PWR_PARENT, GPIO_SPEC_FROM_CHILD)
 };
@@ -59,10 +60,28 @@ static const struct gpio_dt_spec rst_pins[] = {
     DT_FOREACH_CHILD_STATUS_OKAY(RST_PARENT, GPIO_SPEC_FROM_CHILD)
 };
 
+/*
+ * Serializes access to the shared slot resources (I2C mux, SPI, EEPROMs) and
+ * the current slot selection. The I/O thread holds this while ticking a slot's
+ * PIC driver; the management thread must hold it while reading/writing a slot
+ * EEPROM so the two never fight over the bus or the selected slot.
+ */
+static K_MUTEX_DEFINE(slot_bus_mutex);
+
+/*
+ * Settle time given to the TCA9548A analog switch after a channel change,
+ * before the first EEPROM clock edge, so the freshly-connected SDA/SCL lines
+ * are stable and we don't clip the leading SCL pulse into the M24M01.
+ */
+#define SLOT_MUX_SETTLE_US 50
+
+/* TCA9548A I2C control-slave address on the root (host-side) i2c1 bus. */
+#define TCA9548_ADDR 0x70
+
 static bool initialized;
 static int selected_slot;
 static uint32_t powered = 0;
-static uint32_t not_in_reset = 0;
+static uint32_t reset_asserted = 0;
 
 static eeprom_layout_t eeprom_buffer;
 static uint8_t text_area[1024]; // 0x0200
@@ -72,7 +91,7 @@ static slot_info_t slot_info[MAX_SLOTS];
 
 static int slot_set_state(const struct gpio_dt_spec* pins, size_t pin_count, uint8_t slot, bool active)
 {
-    if (slot > pin_count)
+    if (slot >= pin_count)
     {
         return -EINVAL;
     }
@@ -80,34 +99,16 @@ static int slot_set_state(const struct gpio_dt_spec* pins, size_t pin_count, uin
     return gpio_pin_set_dt(&pins[slot], active ? 1 : 0);
 }
 
-static void copy(const uint32_t* pointer, char** str)
+static void copy(const uint32_t* src, char** dest)
 {
-    char* ptr = (char*)*pointer;
-    size_t len = *(pointer + 1);
+    char* ptr = (char*)*src;
+    size_t len = *(src + 1);
 
     // ReSharper disable once CppDFAMemoryLeak
     char* value = malloc(len);
     memcpy(value, ptr, len);
-    str[len] = 0;
+    dest[len] = 0;
 }
-
-
-// void setup_mock(slot_info_t* slot, char* model, char* revision, unsigned char* code, unsigned char code_len)
-// {
-//     if (code_len > 2048)
-//     {
-//         printk("ERROR: code for %s is too large. Must be below 2048 bytes.", model);
-//         return;
-//     }
-//     slot->vendor = "CurrentMakers";
-//     slot->model = model;
-//     memset(slot->revision, 0, sizeof(slot->revision));
-//     memcpy(slot->revision, revision, strlen(revision));
-//     memcpy(slot->code_pic, code, code_len);
-//     memset(slot->driver_ram, 0, sizeof(slot->driver_ram));
-//     slot->doc_link = "https://stm32world.com/Colibri";
-//     slot->product_link = "https://currentmakers.com/products/colibri/";
-// }
 
 static int power_on()
 {
@@ -118,7 +119,7 @@ static int power_on()
             return -ENODEV;
         }
 
-        int ret = gpio_pin_configure_dt(&pwr_pins[i], GPIO_OUTPUT_INACTIVE);
+        int ret = gpio_pin_configure_dt(&pwr_pins[i], GPIO_OUTPUT_ACTIVE);
         if (ret < 0)
         {
             return ret;
@@ -142,7 +143,7 @@ static int deactive_reset(void)
         {
             return ret;
         }
-        not_in_reset |= (1 << i);
+        reset_asserted &= ~(1 << i);
     }
     return 0;
 }
@@ -163,7 +164,8 @@ static uint32_t read_eeprom_fingerprint(const struct device* eeprom)
 
 static int read_eeprom_metadata(const struct device* eeprom)
 {
-    return read_eeprom(eeprom, 4, sizeof(eeprom_buffer), (uint8_t*)&eeprom_buffer.serial_number);
+    size_t length = (void*)&eeprom_buffer.reserved3 - (void*)&eeprom_buffer;
+    return read_eeprom(eeprom, 4, length, (uint8_t*)&eeprom_buffer.serial_number);
 }
 
 static int read_eeprom_textarea(const struct device* eeprom)
@@ -198,19 +200,18 @@ int slots_initialize()
     if (initialized)
         return 0;
     int result = power_on();
-    if (result) return result;
-    k_msleep(5); // Allow for hardware to wake up.
+    if (result)
+        return result;
     result = deactive_reset();
-    if (result) return result;
-    k_msleep(100); // Allow for hardware to wake up.
-    // bool found = false;
+    if (result)
+        return result;
+    k_msleep(20); // Allow for hardware to wake up. Especially boards with MCUs.
     for (size_t i = 1; i <= slot_count(); i++)
     {
         slot_select(i);
         const struct device* eeprom = eeprom_devices[i];
-        // Just read the fingerprint first
         uint32_t fingerprint = read_eeprom_fingerprint(eeprom);
-        if (fingerprint == 0xdeadbabe)
+        if (fingerprint == 0xdeadface)
         {
             result = read_eeprom_metadata(eeprom);
             if (!result)
@@ -218,7 +219,7 @@ int slots_initialize()
                 copy(&eeprom_buffer.vendor_name_ptr, &slot_info[i].vendor);
                 copy(&eeprom_buffer.vendor_model_ptr, &slot_info[i].model);
                 memset(&slot_info[i].revision, 0, 5);
-                memcpy(&slot_info[i].revision[i], &eeprom_buffer.vendor_revision, 4);
+                memcpy(&slot_info[i].revision[0], &eeprom_buffer.vendor_revision, 4);
                 copy(&eeprom_buffer.doc_link_ptr, &slot_info[i].doc_link);
                 copy(&eeprom_buffer.product_link_ptr, &slot_info[i].product_link);
 
@@ -237,8 +238,9 @@ int slots_initialize()
     }
     for (int i = 0; i <= slot_count(); i++)
     {
+        slot_select(i);
         slot_info_t* slot = &slot_info[i];
-        if ( slot->vendor == NULL || slot->model == NULL || slot->code_pic[0] == 0)
+        if (slot->vendor == NULL || slot->model == NULL || slot->code_pic[0] == 0)
         {
             // Then there is either no I/O module mounted, or the I/O module is not initialized from factory.
             continue;
@@ -293,16 +295,56 @@ int slots_initialize()
 
 void slots_tick(uint8_t slot_number, int64_t now)
 {
+    k_mutex_lock(&slot_bus_mutex, K_FOREVER);
+
+    // Select and drive the slot inside the lock: slot_select() only records the
+    // target (the mux routes on actual bus access), so it must be atomic with
+    // the driver's bus traffic against any management-thread EEPROM access.
+    slot_select(slot_number);
     int32_t event_id = create_user_event(COLIBRI_EVENT_TYPE_TIME_PERIOD, 0);
     slot_info_t* slot = &slot_info[slot_number];
     driver_event(slot, event_id, now);
+
+    k_mutex_unlock(&slot_bus_mutex);
+}
+
+/*
+ * Borrow a slot's EEPROM for out-of-band access (e.g. the management thread
+ * uploading/reading a PIC image). Blocks until the I/O thread is between ticks,
+ * then selects the slot and hands back its EEPROM device. The caller MUST call
+ * slots_eeprom_release() when done, and must not tick in the meantime.
+ *
+ * Returns NULL (without taking the lock) if the slot is out of range or its
+ * EEPROM device is not ready.
+ */
+const struct device* slot_acquire(uint8_t slot)
+{
+    if (slot >= ARRAY_SIZE(eeprom_devices))
+    {
+        return NULL;
+    }
+
+    const struct device* eeprom = eeprom_devices[slot];
+    if (!device_is_ready(eeprom))
+    {
+        return NULL;
+    }
+
+    k_mutex_lock(&slot_bus_mutex, K_FOREVER);
+    slot_select(slot);
+    return eeprom;
+}
+
+void slot_release(void)
+{
+    k_mutex_unlock(&slot_bus_mutex);
 }
 
 int slot_set_power_state(uint8_t slot, bool enabled)
 {
     if (!enabled)
         powered &= ~(1 << slot);
-    int result = slot_set_state(pwr_pins, slot_count(), slot, enabled);
+    int result = slot_set_state(pwr_pins, ARRAY_SIZE(pwr_pins), slot, enabled);
     if (enabled)
         powered |= (1 << slot);
     return result;
@@ -310,11 +352,18 @@ int slot_set_power_state(uint8_t slot, bool enabled)
 
 int slot_set_reset_state(uint8_t slot, bool asserted)
 {
-    if (asserted)
-        not_in_reset &= ~(1 << slot);
-    int result = slot_set_state(rst_pins, slot_count(), slot, asserted);
-    if (asserted)
-        not_in_reset |= (1 << slot);
+    int result = slot_set_state(rst_pins, ARRAY_SIZE(rst_pins), slot, asserted);
+    if (result == 0)
+    {
+        if (asserted)
+        {
+            reset_asserted |= 1 << slot;
+        }
+        else
+        {
+            reset_asserted &= ~(1 << slot);
+        }
+    }
     return result;
 }
 
@@ -323,9 +372,9 @@ bool slot_is_powered(uint8_t slot)
     return powered & 1 << slot;
 }
 
-bool slot_is_reset(uint8_t slot)
+bool slot_is_reset_asserted(uint8_t slot)
 {
-    return (not_in_reset & 1 << slot) == 0;
+    return (reset_asserted & (1 << slot)) != 0;
 }
 
 void slot_select(uint8_t slot)
@@ -334,7 +383,7 @@ void slot_select(uint8_t slot)
     // it sets all of that when we access the I2C/SPI devices on the I/O modules.
 
     // BUT SKIP if power is off or reset is active
-    if (slot_is_reset(slot) || !slot_is_powered(slot))
+    if (slot_is_reset_asserted(slot) || !slot_is_powered(slot))
     {
         return;
     }

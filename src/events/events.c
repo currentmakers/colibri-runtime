@@ -2,7 +2,7 @@
 #include "colibri-sdk/colibri-events.h"
 #include <zephyr/linker/section_tags.h>
 
-#define EVENT_STACK_SIZE   (32 * 1024)   /* 32 KiB, placed in CCM */
+#define EVENT_STACK_SIZE   (8 * 1024)   /* 8 KiB, placed in CCM */
 #define EVENT_THREAD_PRIORITY     10
 
 #define EVENTS_MAX_SUBSCRIPTIONS 256
@@ -54,7 +54,7 @@ void events_publish(event_t event, int64_t value)
 
 void* events_subscribe(event_t event_type, event_callback callback)
 {
-    printk("Subscribe: %d\n", event_type.value);
+    printk("Subscribe%s: slot:%d, type:0x%x, parameter:%d\n", event_type.io ? " IO" : "", event_type.slot, event_type.type, event_type.parameter );
     for (int i = 0; i < EVENTS_MAX_SUBSCRIPTIONS; i++)
     {
         if (subscriptions[i].event_type.type == 0) // Free?

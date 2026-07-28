@@ -223,6 +223,20 @@ size_t luaGetMinimumEverFreeHeapSize( void )
 
 /*-----------------------------------------------------------*/
 
+void *luaGetHeapBase( void )
+{
+	return ( void * ) ucHeap;
+}
+
+/*-----------------------------------------------------------*/
+
+size_t luaGetHeapTotalSize( void )
+{
+	return ( size_t ) LUA_HEAP_SIZE;
+}
+
+/*-----------------------------------------------------------*/
+
 static void LuaHeapInit( void )
 {
 BlockLink_t *pxFirstFreeBlock;

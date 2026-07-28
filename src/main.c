@@ -24,31 +24,34 @@
 
 static void publish_time_period_event(int64_t time_since_start, int period)
 {
-    event_t ev = { .value = create_user_event(COLIBRI_EVENT_TYPE_TIME_PERIOD, period) };
+    event_t ev = {.value = create_user_event(COLIBRI_EVENT_TYPE_TIME_PERIOD, period)};
     events_publish_isr(ev, time_since_start);
 }
 
-static void tick_1ms_expiry(struct k_timer *timer)
+static void tick_1ms_expiry(struct k_timer* timer)
 {
     int64_t value = k_uptime_get();
     // We are only going to support 1ms, 10ms, 100ms and 1 second TIME_PERIODs. Anything longer than that, use EVENT_TYPE_TIME
-    int32_t small_clock = (int32_t) value; // TODO: We will accept a hiccup of 648ms, once every 24 days
-    if ( small_clock % 1000 == 0 )
+    int32_t small_clock = (int32_t)value; // TODO: We will accept a hiccup of 648ms, once every 24 days
+    if (small_clock % 1000 == 0)
     {
         publish_time_period_event(value, 1000);
         publish_time_period_event(value, 100);
         publish_time_period_event(value, 10);
         publish_time_period_event(value, 1);
-    } else if ( small_clock % 100 == 0 )
+    }
+    else if (small_clock % 100 == 0)
     {
         publish_time_period_event(value, 100);
         publish_time_period_event(value, 10);
         publish_time_period_event(value, 1);
-    } else if ( small_clock % 10 == 0 )
+    }
+    else if (small_clock % 10 == 0)
     {
         publish_time_period_event(value, 10);
         publish_time_period_event(value, 1);
-    } else
+    }
+    else
     {
         publish_time_period_event(value, 1);
     }
@@ -178,11 +181,13 @@ static int initialize_all(void)
         return error;
     }
     error = usb_initialize();
-    if (error != 0) {
+    if (error != 0)
+    {
         printk("Failed to enable USB stack. Ignoring.\n");
     }
     error = management_initialize();
-    if (error != 0) {
+    if (error != 0)
+    {
         printk("Failed to enable management. Ignoring.\n");
     }
 
@@ -200,17 +205,54 @@ void register_timer_event(void)
     k_timer_start(&tick_1ms, K_MSEC(1), K_MSEC(1));
 }
 
+static void flash_red_led(int times)
+{
+    for ( int i=0; i < times; i++)
+    {
+        led_set_red();
+        k_sleep(K_MSEC(100));
+        led_set_off();
+        k_sleep(K_MSEC(100));
+    }
+}
+
 int main()
 {
     int error = initialize_all();
 
     register_timer_event();
 
-    // TODO: have a better error system, so LEDs can indicate what is wrong. E.g No user script = yellow blink.
     if (error)
     {
-        led_set_red();
-        return error;
+        while (true)
+        {
+            switch (error)
+            {
+            case -ENODEV:
+                flash_red_led(2);
+                break;
+            case -ENOENT:
+            case -ENOTDIR:
+                flash_red_led(3);
+                break;
+            case -ENOMEM:
+                flash_red_led(4);
+                break;
+            case -EIO:
+                flash_red_led(5);
+                break;
+            case -ENXIO:
+                flash_red_led(6);
+                break;
+            default:
+                flash_red_led(10);
+                break;
+            }
+            led_set_red();
+            k_sleep(K_MSEC(1000));
+            led_set_off();
+            k_sleep(K_MSEC(100));
+        }
     }
     for (int i = 0; i < 6; i++)
     {

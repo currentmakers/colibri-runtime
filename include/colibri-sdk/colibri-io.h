@@ -35,10 +35,12 @@ typedef struct {
     // Typically, the implementation should subscribe to a timer event, otherwise
     // it will only be called on power-up. For instance;
     //     subscribe(TIME_100_MS);
-    void (*initialize)(void);
+    void (*initialize)(uint16_t slotnumber);
+
+    void (*loaded)(void);
 
     // A value was published from an id previously subscribed to.
-    void (*event)(int32_t event, int64_t value);
+    void (*event)(event_t event, int64_t value);
 
 } Driver_Interface_t;
 

@@ -13,6 +13,7 @@
  */
 
 #include "colibri/slots.h"
+#include "colibri/i2c.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
@@ -98,4 +99,51 @@ void slot_i2c_read(uint8_t address, uint8_t *data, uint16_t length)
     }
 }
 
+int i2c_detect()
+{
+    const struct device* bus = slot_i2c_bus[slot_selected()];
+    if (!device_is_ready(bus))
+    {
+        return -ENODEV;
+    }
+
+    printk("I2C scan on slot %u:\n", slot_selected());
+    printk("     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f\n");
+
+    int found = 0;
+    for (uint8_t row = 0; row < 0x80; row += 0x10)
+    {
+        printk("%02x:", row);
+        for (uint8_t col = 0; col < 0x10; col++)
+        {
+            uint8_t addr = row + col;
+
+            // Valid 7-bit addressable range is 0x08..0x77; skip reserved ends.
+            if (addr < 0x08 || addr > 0x77)
+            {
+                printk("   ");
+                continue;
+            }
+
+            uint8_t dummy;
+            struct i2c_msg msg = {
+                .buf = &dummy,
+                .len = 1,
+                .flags = I2C_MSG_READ | I2C_MSG_STOP,
+            };
+
+            if (i2c_transfer(bus, &msg, 1, addr) == 0)
+            {
+                printk(" %02x", addr);
+                found++;
+            }
+            else
+            {
+                printk(" --");
+            }
+        }
+        printk("\n");
+    }
+    return found;
+}
 
