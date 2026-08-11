@@ -65,38 +65,44 @@ static const struct device *current_slot_i2c_bus(void)
  * bus belonging to the currently selected slot. The TCA9548A driver will
  * transparently switch the mux to the slot's channel.
  */
-void slot_i2c_write(uint8_t address, uint8_t *data, uint16_t length)
+int slot_i2c_write(uint8_t address, uint8_t *data, uint16_t length)
 {
     const struct device *bus = current_slot_i2c_bus();
     if (bus == NULL) {
         printk("i2c_write: no bus for slot %d\n", slot_selected());
-        return;
+        return -ENODEV;
     }
-
     int ret = i2c_write(bus, data, length, address);
     if (ret < 0) {
-        printk("i2c_write: slot %d addr 0x%02x len %u failed (%d)\n",
-               slot_selected(), address, length, ret);
+        printk("i2c_write: %s  slot %d addr 0x%02x len %u failed (%d): ", bus->name, slot_selected(), address, length, ret);
+        for (int i=0; i < length; i++)
+            printk("0x%02x ", data[i]);
+        printk("\n");
+        // i2c_detect();
+        return ret;
     }
+    return 0;
 }
 
 /*
  * Reads `length` bytes into `data` from 7-bit I2C address `address` on
  * the bus belonging to the currently selected slot.
  */
-void slot_i2c_read(uint8_t address, uint8_t *data, uint16_t length)
+int slot_i2c_read(uint8_t address, uint8_t *data, uint16_t length)
 {
     const struct device *bus = current_slot_i2c_bus();
     if (bus == NULL) {
         printk("i2c_read: no bus for slot %d\n", slot_selected());
-        return;
+        return -ENODEV;
     }
 
     int ret = i2c_read(bus, data, length, address);
     if (ret < 0) {
         printk("i2c_read: slot %d addr 0x%02x len %u failed (%d)\n",
                slot_selected(), address, length, ret);
+        return ret;
     }
+    return 0;
 }
 
 int i2c_detect()

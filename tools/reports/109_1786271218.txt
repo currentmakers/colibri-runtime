@@ -1,0 +1,14 @@
+Colibri calibration report
+module:    io_aqv
+slot:      1
+serial:    109
+operator:  (unspecified)
+timestamp: 2026-08-09 10:26:58
+result:    PASS -- all test points within 0.05V
+
+step results:
+  identity_calibration: ok {'device1': '0x60', 'device2': '0x61'}
+  channel1_calibrate: ok {'k': 308.49566865920696, 'error': 0.0007740399999995873, 'trim_steps': 2}
+  channel1_validate: ok -- within 0.05V
+  channel2_calibrate: ok {'k': 310.1714582776232, 'error': 0.0009400700000004036, 'trim_steps': 1}
+  channel2_validate: ok -- within 0.05V

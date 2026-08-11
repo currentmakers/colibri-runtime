@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <zephyr/linker/section_tags.h>
+#include <zephyr/sys/printk.h>
 #include "../luaconf.h"
 #include "luaHeap.h"
 #include "colibri/luaProjectConfig.h"
@@ -76,7 +77,7 @@ void *luaMallocFunction( size_t xWantedSize )
 {
 BlockLink_t *pxBlock, *pxPreviousBlock, *pxNewBlockLink;
 void *pvReturn = NULL;
-
+const size_t xOriginalWantedSize = xWantedSize;
 
   LUA_MEM_ENTER_CRITICAL_SECTION();
 
@@ -167,6 +168,31 @@ void *pvReturn = NULL;
       }
 
     }
+  }
+
+  if( ( pvReturn == NULL ) && ( xOriginalWantedSize > 0 ) )
+  {
+    /* Allocation failed. Walk the free list to see whether this was true
+    exhaustion (not enough total free bytes) or fragmentation (enough total
+    free bytes, but no single block big enough). */
+    size_t xLargestFreeBlock = 0;
+    size_t xFreeBlockCount = 0;
+    BlockLink_t *pxIterator;
+
+    for( pxIterator = xStart.pxNextFreeBlock; pxIterator != pxEnd; pxIterator = pxIterator->pxNextFreeBlock )
+    {
+      xFreeBlockCount++;
+      if( pxIterator->xBlockSize > xLargestFreeBlock )
+      {
+        xLargestFreeBlock = pxIterator->xBlockSize;
+      }
+    }
+
+    printk( "luaMallocFunction: FAILED wanted=%u (raw=%u) free_total=%u largest_block=%u free_blocks=%u allocbit=0x%08x pxEnd=%p xStart.next=%p\n",
+            ( unsigned int ) xWantedSize, ( unsigned int ) xOriginalWantedSize,
+            ( unsigned int ) xFreeBytesRemaining, ( unsigned int ) xLargestFreeBlock,
+            ( unsigned int ) xFreeBlockCount, ( unsigned int ) xBlockAllocatedBit,
+            ( void * ) pxEnd, ( void * ) xStart.pxNextFreeBlock );
   }
 
   LUA_MEM_LEAVE_CRITICAL_SECTION();

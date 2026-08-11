@@ -6,25 +6,19 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "colibri-sdk/colibri-events.h"
+#include "colibri/boot.h"
+#include "colibri/environment.h"
 #include "colibri/luaInterface.h"
+#include "colibri/strings.h"
+#include "colibri/supervisor.h"
 
 static lua_State* lua_state;
 
-#define ENV_FILE_PATH        "/carrier/environment.txt"
-#define DEFAULT_LUA_PATH     "/mcu/lua_scripts/,/carrier/lua_scripts/"
-#define DEFAULT_LUA_INIT     "blinky.lua"
-#define DEFAULT_ENV_CONTENT  "LUA_PATH=" DEFAULT_LUA_PATH "\nLUA_INIT=" DEFAULT_LUA_INIT "\n"
+static volatile bool initialized = false;
 
-#define LUA_PATH_MAX  128
-#define ENV_FILE_MAX  512
-#define FULL_PATH_MAX 256
-
-static char env_buf[ENV_FILE_MAX] = {0};
-static char lua_path[LUA_PATH_MAX] = DEFAULT_LUA_PATH;
-static void* subscription = NULL;
-
-void lua_event(event_t event, int64_t value)
+static void lua_event(const event_t event, const int64_t value, int32_t user_data)
 {
+    supervisor_timing_start(SUPERVISOR_TIMING_LUA);
     lua_getglobal(lua_state, "event");
 
     if (!lua_isfunction(lua_state, -1))
@@ -42,10 +36,10 @@ void lua_event(event_t event, int64_t value)
     {
         printk("Lua Error: %s\n", lua_tostring(lua_state, -1));
         lua_pop(lua_state, 1);
-        return;
     }
 
     lua_gc(lua_state, LUA_GCCOLLECT, 0);
+    supervisor_timing_stop(SUPERVISOR_TIMING_LUA);
 }
 
 int lua_publish(lua_State* L)
@@ -53,8 +47,7 @@ int lua_publish(lua_State* L)
     int32_t event = (int32_t)luaL_checkinteger(L, 1); // event_type
     int32_t parameter = (int32_t)luaL_checkinteger(L, 2); // event parameter
     int64_t value = luaL_checkinteger(L, 3);
-    event_t ev;
-    ev.value = create_user_event(event, parameter);
+    event_t ev = {.slot = 0, .type = event, .io = false, .parameter = parameter};
     events_publish(ev, value);
     return 1;
 }
@@ -82,10 +75,10 @@ int lua_subscribe(lua_State* L)
     int8_t slot = (int8_t)luaL_optinteger(L, 3, -1);
     event_t event;
     if (slot == -1)
-        event = (event_t){create_user_event(event_type, event_parameter)};
+        event = (event_t){.type = event_type, .parameter = event_parameter, .io = 0, .slot = 0};
     else
-        event = (event_t){create_io_event(slot, event_type, event_parameter)};
-    int32_t index = (int32_t)events_subscribe(event, lua_event);
+        event = (event_t){.type = event_type, .parameter = event_parameter, .io = 1, .slot = slot};
+    int32_t index = (int32_t)events_subscribe(event, lua_event, 0);
     if (index == -1)
         return luaL_error(L, "subscribe(event_type, parameter) failed. Too many subscriptions");
     lua_pushinteger(L, index);
@@ -111,192 +104,9 @@ static const luaL_Reg system_api[] = {
     {NULL, NULL}
 };
 
-/*
- * Strip leading/trailing whitespace (in-place). Returns pointer to the
- * first non-whitespace character. The original buffer is mutated to
- * terminate the string at the last non-whitespace character.
- */
-static char* trim(char* s)
-{
-    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
-    {
-        s++;
-    }
-    size_t len = strlen(s);
-    while (len > 0)
-    {
-        char c = s[len - 1];
-        if (c != ' ' && c != '\t' && c != '\r' && c != '\n')
-        {
-            break;
-        }
-        s[--len] = '\0';
-    }
-    return s;
-}
-
-/*
- * Create environment.txt with sensible defaults so subsequent boots find
- * a usable configuration.
- */
-static int create_default_environment_file(void)
-{
-    struct fs_file_t file;
-    fs_file_t_init(&file);
-    int rc = fs_open(&file, ENV_FILE_PATH, FS_O_CREATE | FS_O_WRITE);
-    if (rc != 0)
-    {
-        printk("lua: failed to create %s: %d\n", ENV_FILE_PATH, rc);
-        return rc;
-    }
-    const char* content = DEFAULT_ENV_CONTENT;
-    ssize_t written = fs_write(&file, content, strlen(content));
-    fs_close(&file);
-    if (written < 0)
-    {
-        printk("lua: failed to write defaults to %s: %zd\n", ENV_FILE_PATH, written);
-        return (int)written;
-    }
-    return 0;
-}
-
-/*
- * Read the entire environment file into the provided buffer (NUL-terminated).
- * Returns 0 on success, negative errno on failure.
- */
-static int read_environment_file(char* buf, size_t buf_size)
-{
-    struct fs_file_t file;
-    fs_file_t_init(&file);
-    int rc = fs_open(&file, ENV_FILE_PATH, FS_O_READ);
-    if (rc != 0)
-    {
-        return rc;
-    }
-    ssize_t n = fs_read(&file, buf, buf_size - 1);
-    buf[n] = '\0';
-    fs_close(&file);
-    if (n < 0)
-    {
-        return n;
-    }
-    return 0;
-}
-
-/*
- * Parse a single KEY=VALUE line from the environment file and apply it.
- * The 'line' buffer is mutated (trimmed).
- *
- * Returns a newly-allocated copy of the LUA_INIT value (caller must free),
- * or NULL if the line is not LUA_INIT.
- */
-static char* parse_env_line(char* line)
-{
-    line = trim(line);
-    if (line[0] == '\0' || line[0] == '#')
-    {
-        return NULL;
-    }
-    char* eq = strchr(line, '=');
-    if (eq == NULL)
-    {
-        return NULL;
-    }
-    *eq = '\0';
-    char* key = trim(line);
-    char* value = trim(eq + 1);
-
-    if (strcmp(key, "LUA_PATH") == 0)
-    {
-        strncpy(lua_path, value, sizeof(lua_path) - 1);
-        lua_path[sizeof(lua_path) - 1] = '\0';
-        return NULL;
-    }
-    if (strcmp(key, "LUA_INIT") == 0)
-    {
-        return strdup(value);
-    }
-    return NULL;
-}
-
-/*
- * Resolve 'script' to a usable path:
- *   - If absolute (starts with '/'), use as-is. Write the value into 'out' argument.
- *   - Otherwise, walk the comma-separated values in lua_path, and check if the file 
- *     is in any of those locations. If file is found, then write the full path  
- *     into 'out' (max size 'out_size'). 
- *     
- * Returns 0 on success. Return negative number on any system level error.
- */
-static int resolve_script_path(const char* script, char* out, size_t out_size)
-{
-    if (script[0] == '/')
-    {
-        if (strlen(script) >= out_size)
-        {
-            return -ENAMETOOLONG;
-        }
-        strcpy(out, script);
-        return 0;
-    }
-
-    /* Relative path: search through lua_path directories */
-    const char* path_copy = strdup(lua_path);
-    if (path_copy == NULL)
-    {
-        return -ENOMEM;
-    }
-
-    char* saveptr = NULL;
-    for (char* dir = strtok_r(path_copy, ",", &saveptr);
-         dir != NULL;
-         dir = strtok_r(NULL, ",", &saveptr))
-    {
-        dir = trim(dir);
-        if (dir[0] == '\0')
-        {
-            continue;
-        }
-
-        /* Construct full path: dir + script */
-        size_t dir_len = strlen(dir);
-        size_t script_len = strlen(script);
-        size_t total_len = dir_len + script_len;
-
-        /* Add 1 for potential '/' separator */
-        if (dir[dir_len - 1] != '/')
-        {
-            total_len++;
-        }
-
-        if (total_len >= out_size)
-        {
-            free(path_copy);
-            return -ENAMETOOLONG;
-        }
-
-        strcpy(out, dir);
-        if (dir[dir_len - 1] != '/')
-        {
-            strcat(out, "/");
-        }
-        strcat(out, script);
-
-        /* Check if file exists */
-        struct fs_dirent entry;
-        int rc = fs_stat(out, &entry);
-        if (rc == 0 && entry.type == FS_DIR_ENTRY_FILE)
-        {
-            free(path_copy);
-            return 0;
-        }
-    }
-
-    free(path_copy);
-    return -ENOENT;
-}
 
 // This function is called by Lua if it cannot handle an error that occurred.
+
 void luaAbort()
 {
     lua_writestringerror("luaAbort", sizeof("luaAbort"));
@@ -409,119 +219,96 @@ static void lua_register_event_constants(lua_State* L)
     lua_setglobal(L, "events");
 }
 
+static void load_lua_file_if_present(char* file, size_t length)
+{
+    // char tmp[50];
+    // strncpy(tmp, file, length);
+    // tmp[length] = '\0';
+    defer_alloc(f, 40)
+    {
+        char* filename = f;
+        strncpy(filename, file, length);
+        filename[length] = '\0';
+        struct fs_dirent ent;
+        int error = fs_stat(filename, &ent);
+        if (error)
+        {
+            // file does not exist.
+            printk("lua: script not present/found: %s\n", filename);
+            return;
+        }
+        printk("lua: loading script %s\n", filename);
+        error = lua_load_script(lua_state, filename);
+        if (error != 0)
+        {
+            printk("lua: failed to load %s: %d\n", filename, error);
+        }
+    }
+}
+
+static void parse_lua_path(char* path_element, size_t length, void* lua_file)
+{
+    char tmp[50];
+    strncpy(tmp, path_element, length);
+    tmp[length] = '\0';
+    printk("parse_lua_path: %d, %s\n", length, tmp);
+    size_t size = length + strlen(path_element);
+    defer_alloc(buffer, size + 2) // fit a possible '/' and a '\0'
+    {
+        char* filename = buffer; // cast buffer to char*
+        strncpy(filename, path_element, length);
+        filename[length] = '\0'; // end of path element copied
+        filename[size] = '\0'; // end the full staring if '/' is at the end of path element
+        filename[size + 1] = '\0'; // end the full staring if '/' is not at the end of path element
+        char last_char = filename[strlen(filename) - 1];
+        if (last_char != '/')
+        {
+            strcat(filename, "/");
+            size++;
+        }
+        string_t* lua = lua_file;
+        strncat(filename, lua->data, lua->size);
+        load_lua_file_if_present(filename, strlen(filename));
+    }
+}
+
+static void parse_lua_init(char* lua_filename, size_t length, void* user_data)
+{
+    char tmp[50];
+    strncpy(tmp, lua_filename, length);
+    tmp[length] = '\0';
+    printk("parse_lua_init: %d, %s\n", length, tmp);
+    if (lua_filename[0] == '/')
+    {
+        // Absolute path, don't parse LUA_PATH
+        load_lua_file_if_present(lua_filename, length);
+    }
+    else
+    {
+        string_t lua_file;
+        lua_file.data = lua_filename;
+        lua_file.size = length;
+        environment_path_read("LUA_PATH", parse_lua_path, &lua_file);
+    }
+}
+
 static int lua_restart()
 {
-    int error;
-
+    initialized = false;
     lua_state = luaL_newstate();
     if (lua_state == NULL)
     {
         printk("lua: cannot create state: not enough memory\n");
         return -ENOMEM;
     }
-
     luaL_openlibs(lua_state);
     lua_register_event_constants(lua_state);
     lua_install_uc_globals(lua_state);
-
-    // Initialize user scripts:
-    // 1. Look for environment.txt on the Carrier Flash.
-    // 2. If missing, create one with the defaults
-    //    (LUA_PATH=lua_scripts/, LUA_INIT=blinky.lua).
-    // 3. Read it.
-    // 4. Apply LUA_PATH= to the static lua_path[] used to resolve relative
-    //    script names.
-    // 5. Load every script listed in LUA_INIT= (comma-separated). Absolute
-    //    names are used as-is; relative names are resolved against lua_path.
-    if (env_buf[0] == '\0')
-    {
-        error = read_environment_file(env_buf, sizeof(env_buf));
-        if (error == -ENOENT)
-        {
-            printk("lua: %s not found, creating defaults\n", ENV_FILE_PATH);
-            error = create_default_environment_file();
-            if (error != 0)
-            {
-                return error;
-            }
-            error = read_environment_file(env_buf, sizeof(env_buf));
-        }
-        if (error != 0)
-        {
-            printk("lua: unable to read %s: %d\n", ENV_FILE_PATH, error);
-            return error;
-        }
-    }
-
-    /*
-     * Parse line-by-line. LUA_PATH is captured into lua_path[] immediately;
-     * LUA_INIT is stashed so it is acted on only after the whole file has
-     * been parsed (so LUA_PATH is in effect regardless of line order). If
-     * LUA_INIT appears more than once, the last occurrence wins.
-     */
-    char* lua_init_value = NULL;
-    char* saveptr = NULL;
-    for (char* line = strtok_r(env_buf, "\n", &saveptr);
-         line != NULL;
-         line = strtok_r(NULL, "\n", &saveptr))
-    {
-        char* init = parse_env_line(line);
-        if (init != NULL)
-        {
-            free(lua_init_value);
-            lua_init_value = init;
-        }
-    }
-
-    if (lua_init_value == NULL)
-    {
-        printk("lua: no LUA_INIT entries found in %s\n", ENV_FILE_PATH);
-        /* No scripts to load - state is initialized, just nothing
-         * subscribed to events yet. */
-        return 0;
-    }
-
-    /*
-     * Walk every comma-separated entry in LUA_INIT and load it. Absolute
-     * names are used as-is; relative names are resolved against lua_path.
-     * Stop at the first failure so the caller sees a useful error code.
-     */
-    char* saveptr2 = NULL;
-    for (char* tok = strtok_r(lua_init_value, ",", &saveptr2);
-         tok != NULL;
-         tok = strtok_r(NULL, ",", &saveptr2))
-    {
-        char* script = trim(tok);
-        if (script[0] == '\0')
-        {
-            continue;
-        }
-        char full_path[FULL_PATH_MAX];
-        error = resolve_script_path(script, full_path, sizeof(full_path));
-        if (error != 0)
-        {
-            printk("lua: cannot resolve script path '%s': %d\n", script, error);
-            break;
-        }
-        printk("lua: loading script %s\n", full_path);
-        error = lua_load_script(lua_state, full_path);
-        if (error != 0)
-        {
-            printk("lua: failed to load %s: %d\n", full_path, error);
-            break;
-        }
-    }
-    free(lua_init_value);
-    if (error != 0)
-    {
-        /* Script not loaded. */
-        printk("lua: unable to load init scripts: %d\n", error);
-        return error;
-    }
+    environment_path_read("LUA_INIT", parse_lua_init, NULL);
     return 0;
 }
 
-static void lua_script_updated(event_t event, int64_t value)
+static void lua_script_updated(event_t event, int64_t value, int32_t user_data)
 {
     lua_close(lua_state);
     lua_restart();
@@ -529,6 +316,11 @@ static void lua_script_updated(event_t event, int64_t value)
 
 int lua_initialize()
 {
-    events_subscribe((event_t){create_user_event(COLIBRI_EVENT_TYPE_LUA_UPDATED, 0)}, lua_script_updated);
+    events_subscribe((event_t){.type = COLIBRI_EVENT_TYPE_LUA_UPDATED, .parameter = 0, .io = 0, .slot = 0}, lua_script_updated, 0);
     return lua_restart();
+}
+
+bool lua_is_initialized()
+{
+    return initialized;
 }

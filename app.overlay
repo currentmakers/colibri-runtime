@@ -2,6 +2,30 @@
 	aliases {
 		modbus0 = &modbus0;
 	};
+
+	/*
+	 * Slot driver code is read out of each I/O module's EEPROM into RAM and
+	 * executed in place. Zephyr marks the whole SRAM MPU region execute-never
+	 * whenever CONFIG_XIP=y, so the arena has to sit outside the kernel's SRAM
+	 * and get its own MPU regions with XN clear (src/slots/code-arena.c).
+	 *
+	 * Base and size are constrained by the ARMv7-M MPU: every region must be a
+	 * power-of-two size aligned to that size. 64 KB at 0x20010000 satisfies both
+	 * with a single region, and ends exactly at the top of the 128 KB SRAM.
+	 * Keeping it at the top also lets the kernel SRAM region stay a plain 128 KB
+	 * at 0x20000000. Resizing or moving it means revisiting the region table in
+	 * src/slots/code-arena.c, which asserts on both properties.
+	 */
+	slot_code_arena: memory@20010000 {
+		compatible = "zephyr,memory-region";
+		reg = <0x20010000 0x10000>;
+		zephyr,memory-region = "IO_DRIVERS";
+	};
+};
+
+/* Kernel SRAM shrinks to the 64 KB below the arena. */
+&sram0 {
+	reg = <0x20000000 0x10000>;
 };
 
 &usart1 {

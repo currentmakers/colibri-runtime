@@ -1,0 +1,14 @@
+Colibri calibration report
+module:    io_aqv
+slot:      1
+serial:    110
+operator:  (unspecified)
+timestamp: 2026-08-09 12:01:52
+result:    PASS -- ch1: 9V err=0.0008V, 2V err=0.0092V, 0.5V err=0.0114V; ch2: 9V err=0.0009V, 2V err=0.0062V, 0.5V err=0.0136V
+
+step results:
+  identity_calibration: ok {'device1': '0x60', 'device2': '0x61'}
+  channel1_calibrate: ok {'k': 308.2459697363176, 'error': 0.0006624699999999706, 'trim_steps': 1}
+  channel1_validate: ok {9.0: {'measured': 8.99915206, 'error': 0.0008479399999998805}, 2.0: {'measured': 1.9907916, 'error': 0.009208399999999894}, 0.5: {'measured': 0.488628416, 'error': 0.01137158399999999}} -- 9V err=0.0008V, 2V err=0.0092V, 0.5V err=0.0114V
+  channel2_calibrate: ok {'k': 310.0025223236512, 'error': 0.0009140300000005652, 'trim_steps': 1}
+  channel2_validate: ok {9.0: {'measured': 9.00094395, 'error': 0.0009439499999999157}, 2.0: {'measured': 1.99380995, 'error': 0.006190050000000058}, 0.5: {'measured': 0.486411953, 'error': 0.013588046999999992}} -- 9V err=0.0009V, 2V err=0.0062V, 0.5V err=0.0136V

@@ -48,7 +48,7 @@ static enum mgmt_cb_return fs_access_cb(uint32_t event,
                 strncmp(fa->filename, "/carrier/lua_scripts/", 21) == 0)
             {
                 printk("Lua script written: %s\n", fa->filename);
-                events_publish((event_t){create_user_event(COLIBRI_EVENT_TYPE_LUA_UPDATED, 0)}, 0);
+                events_publish((event_t){.type = COLIBRI_EVENT_TYPE_LUA_UPDATED, .parameter = 0, .io = 0, .slot = 0}, 0);
             }
         }
     }

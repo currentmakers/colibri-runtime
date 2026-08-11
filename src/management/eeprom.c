@@ -26,6 +26,7 @@
 static int eeprom_handler_read(struct smp_streamer* ctxt);
 static int eeprom_handler_write(struct smp_streamer* ctxt);
 extern void fs_upload_mkdir_initialize();
+extern void io_test_management_initialize(void);
 
 /* command handlers */
 static const struct mgmt_handler eeprom_handlers[] = {
@@ -42,6 +43,7 @@ static struct mgmt_group eeprom_group = {
 int management_initialize()
 {
     mgmt_register_group(&eeprom_group);
+    io_test_management_initialize();
     fs_upload_mkdir_initialize();
     return 0;
 }
@@ -74,7 +76,7 @@ static int eeprom_handler_read(struct smp_streamer* ctxt)
 
     // Borrow the slot's EEPROM under the shared bus lock (blocks the I/O thread
     // until we release). Read the window, then release as soon as possible.
-    const struct device* eeprom = slot_acquire((uint8_t)slot);
+    const struct device* eeprom = slot_acquire_eeprom((uint8_t)slot);
     if (eeprom == NULL)
     {
         slot_release();
@@ -190,7 +192,7 @@ static int eeprom_handler_write(struct smp_streamer* ctxt)
     }
 
     // Borrow the slot's EEPROM under the shared bus lock, write, then release.
-    const struct device* eeprom = slot_acquire((uint8_t)slot);
+    const struct device* eeprom = slot_acquire_eeprom((uint8_t)slot);
     if (eeprom == NULL)
     {
         return MGMT_ERR_EINVAL;

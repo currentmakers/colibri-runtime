@@ -1,0 +1,14 @@
+Colibri calibration report
+module:    io_aqv
+slot:      1
+serial:    106
+operator:  (unspecified)
+timestamp: 2026-08-08 15:48:04
+result:    FAIL -- ch1@1V: measured 6.6126V (error 5.6126V > 0.05V); ch1@9V: measured 6.6129V (error 2.3871V > 0.05V); ch2@1V: measured 1.3069V (error 0.3069V > 0.05V); ch2@9V: measured 10.7365V (error 1.7365V > 0.05V)
+
+step results:
+  identity_calibration: ok {'device1': '0x60', 'device2': '0x61'}
+  channel1_9v: ok {'nominal': 9, 'measured': 10.7366235}
+  channel1_1v: ok {'nominal': 1, 'measured': 1.31467448}
+  channel2_9v: ok {'nominal': 9, 'measured': 10.7366654}
+  channel2_1v: ok {'nominal': 1, 'measured': 1.3068535}

@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.20.0)
 
 set(ZEPHYR_TOOLCHAIN_VARIANT zephyr CACHE STRING "Zephyr toolchain variant")
 
-find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(colibri_runtime C CXX ASM) # Enable ASM here, within the project call
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE} )
+project(colibri_runtime C CXX ASM)
 
 target_include_directories(app PRIVATE
         lua/
@@ -12,6 +12,9 @@ target_include_directories(app PRIVATE
 
 target_sources(app PRIVATE
         src/main.c
+        src/boot/environment.c
+        src/boot/error-handling.c
+        src/boot/initialization.c
         src/events/events.c
         src/fs/fs_callback.c
         src/fs/nvs.c
@@ -20,12 +23,16 @@ target_sources(app PRIVATE
         src/lua/load-lua.c
         src/lua/lua.c
         src/management/eeprom.c
+        src/management/io-test.c
         src/modbus/modbus.c
+        src/slots/code-arena.c
         src/slots/host-api.c
         src/slots/slots.c
         src/slots/slotcount.c
         src/slots/i2c.c
         src/slots/spi.c
+        src/string/strings.c
+        src/timing/timing.c
         src/tasks/io-subsystem.c
         src/tasks/rgb-updater.c
         src/tasks/supervisor.c

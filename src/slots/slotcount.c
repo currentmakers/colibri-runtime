@@ -11,6 +11,8 @@ static const struct gpio_dt_spec slot_pins[] = {
 
 static int number_of_slots = 0;
 
+/** Return the number of I/O slots
+ */
 int slot_count()
 {
     return number_of_slots;
@@ -21,7 +23,7 @@ void slot_count_initialize() {
     for (int i = 0; i < ARRAY_SIZE(slot_pins); i++) {
         gpio_pin_configure_dt(&slot_pins[i], GPIO_INPUT);
         if (gpio_pin_get_dt(&slot_pins[i]) > 0) {
-            number_of_slots |= (1 << i);
+            number_of_slots |= 1 << i;
         }
     }
     printk("Slots on carrier: %d\n", number_of_slots);

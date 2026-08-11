@@ -21,5 +21,5 @@ do
     end
 
     publish(rgb, 0, 0x04)
-    subscription1 = subscribe(tick,10)  -- Event every 10ms. Supported times, 1, 10, 100, 1000 ms
+    subscription1 = subscribe(tick,100)  -- Event every 10ms. Supported times, 1, 10, 100, 1000 ms
 end

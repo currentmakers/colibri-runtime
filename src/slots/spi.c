@@ -183,20 +183,20 @@ static struct spi_config *current_slot_cfg(int *out_slot)
  * Clock `length` bytes from `data` to sub-device `address` on the I/O
  * module currently selected via slot_selected(). MISO is discarded.
  */
-void slot_spi_write(uint8_t address, uint8_t *data, uint16_t length)
+int slot_spi_write(uint8_t address, uint8_t *data, uint16_t length)
 {
     int slot;
     struct spi_config *cfg = current_slot_cfg(&slot);
     if (cfg == NULL) {
         printk("spi_write: no config for slot %d\n", slot_selected());
-        return;
+        return -ENODEV;
     }
 
     int ret = slot_spi_set_subdevice(address);
     if (ret < 0) {
         printk("spi_write: slot %d sub %u select failed (%d)\n",
                slot, address, ret);
-        return;
+        return -EIO;
     }
 
     const struct spi_buf tx_buf = { .buf = data, .len = length };
@@ -207,6 +207,7 @@ void slot_spi_write(uint8_t address, uint8_t *data, uint16_t length)
         printk("spi_write: slot %d sub %u len %u failed (%d)\n",
                slot, address, length, ret);
     }
+    return 0;
 }
 
 /*
@@ -215,24 +216,24 @@ void slot_spi_write(uint8_t address, uint8_t *data, uint16_t length)
  * `to_write` may be NULL, in which case the SPI controller's default
  * overrun byte is shifted out.
  */
-void slot_spi_read(uint8_t address, uint8_t *to_write, uint8_t *to_read,
+int slot_spi_read(uint8_t address, uint8_t *to_write, uint8_t *to_read,
                    uint16_t length)
 {
     int slot;
     struct spi_config *cfg = current_slot_cfg(&slot);
     if (cfg == NULL) {
         printk("spi_read: no config for slot %d\n", slot_selected());
-        return;
+        return -ENODEV;
     }
     if (to_read == NULL) {
-        return;
+        return -EFAULT;
     }
 
     int ret = slot_spi_set_subdevice(address);
     if (ret < 0) {
         printk("spi_read: slot %d sub %u select failed (%d)\n",
                slot, address, ret);
-        return;
+        return ret;
     }
 
     const struct spi_buf tx_buf = { .buf = to_write, .len = length };
@@ -250,5 +251,7 @@ void slot_spi_read(uint8_t address, uint8_t *to_write, uint8_t *to_read,
     if (ret < 0) {
         printk("spi_read: slot %d sub %u len %u failed (%d)\n",
                slot, address, length, ret);
+        return ret;
     }
+    return 0;
 }

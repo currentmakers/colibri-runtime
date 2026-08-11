@@ -39,8 +39,8 @@
 //   |      Slot              | IO |                Event Type                       |                            Event Parameter                                    |
 //   +----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 //
-#define create_io_event(SLOT, EVENT_TYPE, EVENT_PARAM) (SLOT<<27 | 1<<26 | (EVENT_TYPE<<16) | EVENT_PARAM)
-#define create_user_event(EVENT_TYPE, EVENT_PARAM) (EVENT_TYPE<<16 | EVENT_PARAM)
+// #define create_io_event(SLOT, EVENT_TYPE, EVENT_PARAM) (SLOT<<27 | 1<<26 | (EVENT_TYPE<<16) | EVENT_PARAM)
+// #define create_user_event(EVENT_TYPE, EVENT_PARAM) (EVENT_TYPE<<16 | EVENT_PARAM)
 
 typedef union
 {
@@ -54,21 +54,22 @@ typedef union
     };
 } event_t;
 
-typedef void (*event_callback)(event_t event, int64_t value);
+typedef void (*event_callback)(event_t event, int64_t value, int32_t user_data);
 
 // TODO: The volatile inside the event_subscription struct is a temporary measure to ensure register caching is not happening. Review and work out the "right" way.
 // The issue is that I/O thread and Lua thread will share event_subscription. And there is preemption risks involved.
 typedef struct
 {
+    volatile int64_t latest_value;
+    int32_t userdata;
     event_t event_type;
     event_callback callback;
-    volatile int64_t latest_value;
 } event_subscription;
 
 int events_initialize();
 int64_t events_get(event_t event);
 void events_publish(event_t event, int64_t value);
-void* events_subscribe(event_t event, event_callback callback);
+void* events_subscribe(event_t event, event_callback callback, int32_t user_data);
 void events_unsubscribe(void* subscription);
 
 #endif

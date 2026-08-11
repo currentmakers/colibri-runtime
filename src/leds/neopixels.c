@@ -1,5 +1,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/led_strip.h>
+#include "colibri-sdk/colibri.h"
 #include "colibri/leds.h"
 #include "colibri/slots.h"
 
@@ -13,17 +14,27 @@ static struct led_rgb pixels[LED_STRIP_COUNT];
 static volatile bool initialized;
 static volatile bool changed;
 
-static void rgb_set(event_t event, int64_t value)
+static void rgb_set(const event_t event, const int64_t value, int32_t user_data)
 {
-    rgb_set_color(event.parameter, (uint32_t)value);
+    rgb_set_color(event.slot, (int32_t) value);
 }
 
 int rgb_initialize()
 {
-    for ( int i=0; i < slot_count(); i++ )
+    for (int i = 0; i < slot_count(); i++)
     {
-        events_subscribe((event_t) { create_user_event(COLIBRI_EVENT_TYPE_RGB_INDICATOR, i) }, rgb_set);
+        // The receive of the events have not started yet, so instead of this.
+        // events_subscribe((event_t) { create_user_event(COLIBRI_EVENT_TYPE_RGB_INDICATOR, i) }, rgb_set, 0);
+        rgb_set_color(i, 0);
     }
+    events_subscribe((event_t){.io = false, .type = COLIBRI_EVENT_TYPE_RGB_INDICATOR, .parameter = 0, .slot = 0}, rgb_set, 0);
+    events_subscribe((event_t){.io = true, .type = COLIBRI_EVENT_TYPE_RGB_INDICATOR, .parameter = 0, .slot = 1}, rgb_set, 0);
+    events_subscribe((event_t){.io = true, .type = COLIBRI_EVENT_TYPE_RGB_INDICATOR, .parameter = 0, .slot = 2}, rgb_set, 0);
+    events_subscribe((event_t){.io = true, .type = COLIBRI_EVENT_TYPE_RGB_INDICATOR, .parameter = 0, .slot = 3}, rgb_set, 0);
+    events_subscribe((event_t){.io = true, .type = COLIBRI_EVENT_TYPE_RGB_INDICATOR, .parameter = 0, .slot = 4}, rgb_set, 0);
+    events_subscribe((event_t){.io = true, .type = COLIBRI_EVENT_TYPE_RGB_INDICATOR, .parameter = 0, .slot = 5}, rgb_set, 0);
+    events_subscribe((event_t){.io = true, .type = COLIBRI_EVENT_TYPE_RGB_INDICATOR, .parameter = 0, .slot = 6}, rgb_set, 0);
+    events_subscribe((event_t){.io = true, .type = COLIBRI_EVENT_TYPE_RGB_INDICATOR, .parameter = 0, .slot = 7}, rgb_set, 0);
     return 0;
 }
 
@@ -48,16 +59,16 @@ static int32_t translate(uint32_t rgb)
 {
     switch (rgb)
     {
-    case -1: // dark red
-        return 0x040000;
-    case -2: // dark green
+    case COLIBRI_COLOR_OK:      // dark green
         return 0x002000;
-    case -3: // dark blue
-        return 0x000020;
-    case -4: // yellow
-        return 0x202000;
-    case -5: // orange
+    case COLIBRI_COLOR_WARNING: // orange
         return 0x200800;
+    case COLIBRI_COLOR_INFO:    // dark blue
+        return 0x000020;
+    case COLIBRI_COLOR_ERROR:   // dark red
+        return 0x040000;
+    case -5:                    // yellow
+        return 0x202000;
     case -6:
         return 0x002020;
     case -7:

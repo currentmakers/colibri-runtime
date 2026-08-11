@@ -17,8 +17,6 @@ typedef struct
 
 static event_subscription subscriptions[EVENTS_MAX_SUBSCRIPTIONS];
 
-static const uint32_t ALL_EVENTS = create_user_event(COLIBRI_EVENT_TYPE_ALL, 0);
-
 K_MSGQ_DEFINE(event_msgq, sizeof(event_value_t), EVENTS_QUEUE_SIZE, 4);
 
 int64_t events_get(event_t event)
@@ -46,13 +44,9 @@ void events_publish(event_t event, int64_t value)
         printk("Event dropped: [%d:%d} %d (%d) -> %lld. Queue size exceeded.\n", event.slot, event.io, event.type,
                event.parameter, value);
     }
-    else
-    {
-        // printk("Event published: [%d:%d] %d(%d) -> %lld.\n", event.slot, event.io, event.type, event.parameter, value);
-    }
 }
 
-void* events_subscribe(event_t event_type, event_callback callback)
+void* events_subscribe(event_t event_type, event_callback callback, int32_t user_data)
 {
     printk("Subscribe%s: slot:%d, type:0x%x, parameter:%d\n", event_type.io ? " IO" : "", event_type.slot, event_type.type, event_type.parameter );
     for (int i = 0; i < EVENTS_MAX_SUBSCRIPTIONS; i++)
@@ -61,6 +55,7 @@ void* events_subscribe(event_t event_type, event_callback callback)
         {
             subscriptions[i].event_type = event_type;
             subscriptions[i].callback = callback;
+            subscriptions[i].userdata = user_data;
             return (void*)i; // KISS! Was messing with actual pointers before, but just too dangerous.
         }
     }
@@ -80,16 +75,16 @@ void events_unsubscribe(void* subscription)
 
 static void post(event_value_t* data)
 {
-    if ( data->event.type < 0 || data->event.type >= COLIBRI_EVENT_TYPE_END_OF_LIST)
+    if ( data->event.type >= COLIBRI_EVENT_TYPE_END_OF_LIST)
         return;
     for (int i = 0; i < EVENTS_MAX_SUBSCRIPTIONS; i++)
     {
         event_subscription subscription = subscriptions[i];
-        if (subscription.event_type.value == data->event.value || subscription.event_type.type == ALL_EVENTS)
+        if (subscription.event_type.value == data->event.value)
         {
             if (subscription.callback)
-                subscription.callback(data->event, data->value);
-            // Setting this AFTER callback, allows us to pick "previous" from within the callback, with event_broker_get().
+                subscription.callback(data->event, data->value, subscription.userdata);
+            // Setting this AFTER callback, allows us to pick "previous" from within the callback.
             subscription.latest_value = data->value;
         }
     }
